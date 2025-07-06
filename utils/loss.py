@@ -1,3 +1,11 @@
+from typing import Dict, Tuple
+
+import torch
+import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
+from utils.utils import drop_leading_zeros_batch, drop_zr_cols_and_padded, pad_to_length
+
+
 def prompt_remove(logits, labels, input_ids):
     masked_labels = mask_from_neg100(labels)  # (-1,n) becomes 1, else becomse 0
     masked_logits = masked_labels.unsqueeze(-1) * logits
