@@ -3,8 +3,34 @@ from typing import Dict, Tuple
 import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
-from utils.utils import drop_leading_zeros_batch, drop_zr_cols_and_padded, pad_to_length
+from utils import drop_leading_zeros_batch, drop_zr_cols_and_padded, pad_to_length
 
+def mask_from_neg100(x):
+    """
+    Replace padding (-100) with 0, but set the last padding token
+    before real tokens start to 1.
+
+    Args:
+        x (torch.Tensor): Input tensor of shape (batch_size, num_tokens).
+        pad_val (int): The padding value to replace. Default is -100.
+
+    Returns:
+        torch.Tensor: The processed tensor.
+    """
+    # Find the first real token index
+    pad_val = -100
+    out = (x != pad_val).long()
+
+    first_real_token_idx = (x != pad_val).float().argmax(dim=1)
+
+    marker_col_idx = (first_real_token_idx - 1).clamp(min=0)
+
+    # Set the last padding (before real tokens) to 1
+    row_idx = torch.arange(x.size(0), device=x.device)
+    if x.size(1) > 0:
+        out[row_idx, marker_col_idx] = 1
+
+    return out
 
 def prompt_remove(logits, labels, input_ids):
     masked_labels = mask_from_neg100(labels)  # (-1,n) becomes 1, else becomse 0
