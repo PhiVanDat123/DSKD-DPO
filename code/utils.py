@@ -11,6 +11,9 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+def log_rank(content, rank=0):
+    if not dist.is_initialized() or dist.get_rank() == rank:
+        logging.info(content)
 
 def get_open_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
