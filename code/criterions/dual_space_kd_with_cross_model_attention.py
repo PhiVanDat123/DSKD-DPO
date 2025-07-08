@@ -127,7 +127,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_logits = t2s_hiddens.matmul(
             distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
         )
-        t2s_probs = torch.softmax(t2s_logits, dim=-1) # tính prob của teacher -> student
+        #t2s_probs = torch.softmax(t2s_logits, dim=-1) # tính prob của teacher -> student
         t2s_ce_loss = self.compute_cross_entropy_loss(t2s_logits, target)[0]
         t2s_acc_mask = t2s_logits.argmax(-1).eq(target)
         t2s_acc = (t2s_acc_mask * pad_mask).sum()
@@ -135,7 +135,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         log["t2s_ce_loss"] = t2s_ce_loss
         log["t2s_acc"] = t2s_acc
         log["max_t2s_prob"] = max_probs
-        log["t2s_probs"] = t2s_probs #thêm log của teacher -> student
+        #log["t2s_probs"] = t2s_probs #thêm log của teacher -> student
         
         if not self.args.only_save_projector:  # skip if only train projectors (pre-train projectors)
             t2s_kd_loss = self.dist_func(
@@ -163,4 +163,4 @@ class DualSpaceKDWithCMA(VariousDivergence):
             kd_loss = t2s_ce_loss
 
         log["kd_loss"] = kd_loss
-        return kd_loss, t2s_probs, log #return thêm t2s_probs
+        return kd_loss, log 
