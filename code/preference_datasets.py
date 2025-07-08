@@ -10,7 +10,7 @@ import torch
 import tqdm
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
-from utils import TemporarilySeededRandom
+from .utils import TemporarilySeededRandom
 
 # Suppress torchvision warning about image loading
 warnings.filterwarnings("ignore", message="Failed to load image Python extension")

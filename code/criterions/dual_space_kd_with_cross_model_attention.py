@@ -1,7 +1,7 @@
 import math
 import torch
 from .various_divergence import VariousDivergence
-
+from ..trainers import concatenated_inputs
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, args, padding_id=-100) -> None:
@@ -38,7 +38,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 position_ids=input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
-        kd_loss, log = self.compute_dual_space_kd_loss_with_cma(
+        kd_loss, log, t2s_logits = self.compute_dual_space_kd_loss_with_cma(
             outputs, teacher_outputs, input_data, output_data, distiller, log
         )
         loss = (1.0 - self.kd_rate) * loss + self.kd_rate * kd_loss
@@ -52,13 +52,18 @@ class DualSpaceKDWithCMA(VariousDivergence):
         logging_output = self.record_logging_output(
             logging_output, batch_denom, log
         )
-        return loss / batch_denom, logging_output
+        return loss / batch_denom, logging_output, t2s_logits
     
     def compute_dual_space_kd_loss_with_cma(
         self, outputs, teacher_outputs, input_data, output_data, distiller, log
     ):
-        target = output_data["label"]
-        teacher_target = output_data[f"teacher_{distiller.teacher_model_type}_label"]
+        batch = {**input_data, **output_data}
+        concat_batch = concatenated_inputs(batch)
+        #target = output_data["label"]
+        #teacher_target = output_data[f"teacher_{distiller.teacher_model_type}_label"]
+        
+        target = concat_batch["concatenated_labels"]
+        teacher_target = concat_batch[f"concatenated_teacher_{distiller.teacher_model_type}_labels"]
         
         pad_mask = target.ne(self.padding_id)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
@@ -93,12 +98,22 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, input_data["input_ids"], torch.zeros_like(target))
+        #formal_input = torch.where(pad_mask, input_data["input_ids"], torch.zeros_like(target))
+        formal_input = torch.where(
+        pad_mask,
+        concat_batch["concatenated_input_ids"],
+        torch.zeros_like(target)
+        )
         stu_input_embeds = stu_embed_tokens(formal_input).detach()
         stu_target_embeds = stu_embed_tokens(formal_target).detach()
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
+        #formal_teacher_input = torch.where(teacher_pad_mask, input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
+        formal_teacher_input = torch.where(
+        teacher_pad_mask,
+        concat_batch[f"concatenated_teacher_{distiller.teacher_model_type}_input_ids"],
+        torch.zeros_like(teacher_target),
+        )
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
 
@@ -127,7 +142,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_logits = t2s_hiddens.matmul(
             distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
         )
-        #t2s_probs = torch.softmax(t2s_logits, dim=-1) # tính prob của teacher -> student
         t2s_ce_loss = self.compute_cross_entropy_loss(t2s_logits, target)[0]
         t2s_acc_mask = t2s_logits.argmax(-1).eq(target)
         t2s_acc = (t2s_acc_mask * pad_mask).sum()
@@ -135,7 +149,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
         log["t2s_ce_loss"] = t2s_ce_loss
         log["t2s_acc"] = t2s_acc
         log["max_t2s_prob"] = max_probs
-        #log["t2s_probs"] = t2s_probs #thêm log của teacher -> student
         
         if not self.args.only_save_projector:  # skip if only train projectors (pre-train projectors)
             t2s_kd_loss = self.dist_func(
@@ -163,4 +176,4 @@ class DualSpaceKDWithCMA(VariousDivergence):
             kd_loss = t2s_ce_loss
 
         log["kd_loss"] = kd_loss
-        return kd_loss, log 
+        return kd_loss, log, t2s_logits

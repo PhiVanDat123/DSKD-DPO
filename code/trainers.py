@@ -19,8 +19,8 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
 
-from preference_datasets import get_batch_iterator
-from utils import (
+from .preference_datasets import get_batch_iterator
+from .utils import (
     slice_and_move_batch_for_device,
     formatted_dict,
     all_gather_if_needed,
@@ -29,6 +29,8 @@ from utils import (
     rank0_print,
     get_local_dir,
 )
+from .criterions.dual_space_kd_with_cross_model_attention import DualSpaceKDWithCMA
+
 import numpy as np
 import wandb
 import tqdm
@@ -40,6 +42,9 @@ import time
 import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
+
+criterion = DualSpaceKDWithCMA()
+
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
                           average_log_prob: bool = False):
