@@ -30,6 +30,8 @@ from utils.utils import (
     get_local_dir,
 )
 from criterions.dual_space_kd_with_cross_model_attention import DualSpaceKDWithCMA
+from criterions.cross_entropy_loss import CrossEntropyLoss
+from distiller import Distiller
 
 import numpy as np
 import wandb
@@ -319,7 +321,7 @@ def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict
 
 
 class BasicTrainer(object):
-    def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, transform_config = None):
+    def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, transform_config = None, device: Optional[torch.device] = None):
         """A trainer for a language model, supporting either SFT or DPO training.
             
             If multiple GPUs are present, naively splits the model across them, effectively
@@ -331,6 +333,10 @@ class BasicTrainer(object):
         self.config = config
         self.run_dir = run_dir
         self.base_data_dir = config.base_data_dir
+
+        self.loss = CrossEntropyLoss(config, padding_id=-100)
+        self.projector_trainer = DualSpaceKDWithCMA(config, padding_id=-100)
+        self.distiller = Distiller(config, device)
 
         tokenizer_name_or_path = config.model.tokenizer_name_or_path or config.model.name_or_path
         rank0_print(f'Loading tokenizer {tokenizer_name_or_path}')
@@ -567,6 +573,7 @@ class BasicTrainer(object):
 
         return losses.mean(), metrics
 
+    '''
     def train(self):
         """Begin either SFT or DPO training, with periodic evaluation."""
 
@@ -683,6 +690,125 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #### END TRAINING ####
+    '''
+
+    def train(self):
+        rank0_print(f'Using {self.config.optimizer} optimizer')
+        self.optimizer = getattr(torch.optim, self.config.optimizer)(
+            self.policy.parameters(), lr=self.config.lr
+        )
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.optimizer,
+            lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.warmup_steps + 1))
+        )
+
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+        if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
+            self.reference_model.eval()
+
+        self.projector_trainer.distiller = self.distiller
+        projector_optimizer = torch.optim.Adam(
+            self.projectors.parameters(), lr=self.config.projector_lr
+        )
+        projector_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            projector_optimizer,
+            lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.projector_warmup_steps + 1))
+        )
+
+        self.example_counter = 0
+        self.batch_counter = 0
+        last_log = None
+
+        for batch in self.train_iterator:
+            ### === Phase 1: Train Projector ===
+            self.policy.eval()
+            projector_optimizer.zero_grad()
+
+            for microbatch_idx in range(self.config.gradient_accumulation_steps):
+                global_microbatch = slice_and_move_batch_for_device(
+                    batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
+                )
+                local_microbatch = slice_and_move_batch_for_device(
+                    global_microbatch, self.rank, self.world_size, self.rank
+                )
+
+                #  Không cho phép student model học trong phase projector
+                with torch.no_grad():
+                    t2s_logits = self.projector_trainer.compute_dual_space_kd_loss_with_cma(
+                        local_microbatch,
+                        local_microbatch.get("attention_mask"),
+                        self
+                    )
+
+                #  Projector loss vẫn cần tính gradient
+                projector_loss, _ = self.loss(
+                    self,
+                    input_data={
+                        "input_ids": local_microbatch["input_ids"],
+                        "attention_mask": local_microbatch["attention_mask"]
+                    },
+                    output_data={"label": local_microbatch["label"]},
+                    logging_output={},
+                    batch_denom=self.config.batch_size,
+                )
+                (projector_loss / self.config.gradient_accumulation_steps).backward()
+
+            projector_optimizer.step()
+            projector_scheduler.step()
+
+            ### === Phase 2: Train Student Model ===
+            self.policy.train()
+            start_time = time.time()
+            batch_metrics = defaultdict(list)
+
+            self.optimizer.zero_grad()
+            for microbatch_idx in range(self.config.gradient_accumulation_steps):
+                global_microbatch = slice_and_move_batch_for_device(
+                    batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
+                )
+                local_microbatch = slice_and_move_batch_for_device(
+                    global_microbatch, self.rank, self.world_size, self.rank
+                )
+
+                loss, metrics = self.get_batch_metrics(
+                    local_microbatch,
+                    self.config.loss,
+                    train=True
+                )
+                (loss / self.config.gradient_accumulation_steps).backward()
+
+                for k, v in metrics.items():
+                    batch_metrics[k].extend(v)
+
+            grad_norm = self.clip_gradient()
+            self.optimizer.step()
+            self.scheduler.step()
+
+            step_time = time.time() - start_time
+            examples_per_second = self.config.batch_size / step_time
+            batch_metrics['examples_per_second'].append(examples_per_second)
+            batch_metrics['grad_norm'].append(grad_norm)
+
+            self.batch_counter += 1
+            self.example_counter += self.config.batch_size
+
+            if last_log is None or time.time() - last_log > self.config.minimum_log_interval_secs:
+                mean_train_metrics = {
+                    k: sum(v) / len(v) for k, v in batch_metrics.items()
+                }
+                mean_train_metrics['counters/examples'] = self.example_counter
+                mean_train_metrics['counters/updates'] = self.batch_counter
+                rank0_print(f'train stats after {self.example_counter} examples: {formatted_dict(mean_train_metrics)}')
+
+                if self.config.wandb.enabled and self.rank == 0:
+                    wandb.log(mean_train_metrics, step=self.example_counter)
+
+                last_log = time.time()
+            else:
+                rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
 
 
     def clip_gradient(self):
