@@ -13,34 +13,34 @@ from peft import (
     TaskType,
     get_peft_model
 )
-from utils import log_rank
+from utils.utils import log_rank
 
 
 class Distiller(nn.Module):
-    def __init__(self, args, device):
+    def __init__(self, config, device):
         super(Distiller, self).__init__()
-        self.args = args
+        self.config = config
         self.device = device
-        self.student_model_type = args.model_type
+        self.student_model_type = config.model_type
         self.student_model, self.student_tokenizer = self.load_student_model()
         
-        if self.args.teacher_model_path is not None:
+        if self.config.teacher_model_path is not None:
             self.teacher_model, self.teacher_tokenizers = self.load_teacher_model()
         else:
             self.teacher_model, self.teacher_tokenizers = None, {}
-        self.teacher_model_type = args.teacher_model_type
+        self.teacher_model_type = config.teacher_model_type
 
-        if self.teacher_model and args.projector_config_path:
+        if self.teacher_model and config.projector_config_path:
             self.set_and_load_existing_projectors()
             log_rank(f"projector structure: {self.projectors}")
         
-        if args.teacher_to_student_token_mapping is not None:
-            self.tea2stu_token_mapping = json.load(open(args.teacher_to_student_token_mapping))
-            log_rank(f"Load teacher-to-student token mapping from {args.teacher_to_student_token_mapping}")
+        if config.teacher_to_student_token_mapping is not None:
+            self.tea2stu_token_mapping = json.load(open(config.teacher_to_student_token_mapping))
+            log_rank(f"Load teacher-to-student token mapping from {config.teacher_to_student_token_mapping}")
         
-        if args.teacher_to_student_id_mapping is not None:
-            self.tea2stu_id_mapping = json.load(open(args.teacher_to_student_id_mapping))
-            log_rank(f"Load teacher-to-student id mapping from {args.teacher_to_student_id_mapping}")
+        if config.teacher_to_student_id_mapping is not None:
+            self.tea2stu_id_mapping = json.load(open(config.teacher_to_student_id_mapping))
+            log_rank(f"Load teacher-to-student id mapping from {config.teacher_to_student_id_mapping}")
 
             self.stu2tea_id_mapping = {}
             for tea_id in self.tea2stu_id_mapping:
@@ -59,6 +59,7 @@ class Distiller(nn.Module):
             self.stu2tea_id_mapping_tea = torch.LongTensor(list(self.stu2tea_id_mapping.values())).to(device)
             self.stu2tea_id_mapping_stu = torch.LongTensor(list(self.stu2tea_id_mapping.keys())).to(device)
 
+    '''
     @staticmethod
     def add_distiller_args(parser):
         group = parser.add_argument_group("distiller", "distiller configurations")
@@ -83,7 +84,8 @@ class Distiller(nn.Module):
         group.add_argument("--student-to-teacher-id-mapping", type=str, default=None,
                            help='path for the vocab alignment file (id, student-to-teacher)')
         return parser
-    
+    '''
+        
     def load_tokenizer(self, model_type, path):
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
         if model_type in ["gpt2", "opt", "llama", "gptj", "llama2", "mistral", "tinyllama", "minicpm"]:
@@ -97,7 +99,7 @@ class Distiller(nn.Module):
 
     def set_and_load_existing_projectors(self):
         self.projectors = nn.ModuleDict()
-        projector_config = json.load(open(self.args.projector_config_path))
+        projector_config = json.load(open(self.config.projector_config_path))
         name_dict = {
             "s": self.student_hidden_size, 
             "t": self.teacher_hidden_size,
@@ -137,10 +139,10 @@ class Distiller(nn.Module):
         self.load_existing_projectors()
 
     def load_existing_projectors(self):
-        if self.args.projector_path is not None:
-            projector_path = os.path.join(self.args.projector_path, "projector.pt")
+        if self.config.projector_path is not None:
+            projector_path = os.path.join(self.config.projector_path, "projector.pt")
         else:
-            projector_path = os.path.join(self.args.model_path, "projector.pt")
+            projector_path = os.path.join(self.config.model_path, "projector.pt")
 
         if os.path.exists(projector_path):
             projector_params = torch.load(projector_path, map_location=f"cuda:{self.device}")
@@ -158,60 +160,60 @@ class Distiller(nn.Module):
     
     def load_student_model(self):
         log_rank("Loading student model...")
-        config = AutoConfig.from_pretrained(self.args.model_path, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(self.config.model_path, trust_remote_code=True)
         config.is_model_parallel = False
 
-        tokenizer = self.load_tokenizer(self.args.model_type, self.args.model_path)
+        tokenizer = self.load_tokenizer(self.config.model_type, self.config.model_path)
         
         if hasattr(config, "n_embed"):
             self.student_hidden_size = config.n_embed
         else:
             self.student_hidden_size = config.hidden_size
         
-        if self.args.model_dtype == "fp32":
+        if self.config.model_dtype == "fp32":
             self.dtype = torch.float32
-        elif self.args.model_dtype == "bf16":
+        elif self.config.model_dtype == "bf16":
             self.dtype = torch.bfloat16
-        elif self.args.model_dtype == "fp16":
+        elif self.config.model_dtype == "fp16":
             self.dtype = torch.float16
         else:
-            raise NotImplementedError("Invalid model_dtype for f`{self.args.model_dtype}`")
+            raise NotImplementedError("Invalid model_dtype for f`{self.config.model_dtype}`")
         
         model = AutoModelForCausalLM.from_pretrained(
-            self.args.model_path, 
+            self.config.model_path, 
             config=config, 
             device_map=None, 
             torch_dtype=self.dtype,
             trust_remote_code=True,
         )
 
-        if self.args.peft is not None:
-            if self.args.peft == "lora":
+        if self.config.peft is not None:
+            if self.config.peft == "lora":
                 model.enable_input_require_grads()
-                if self.args.peft_path is not None:
-                    if self.args.do_train:
-                        _model = PeftModel.from_pretrained(model, self.args.peft_path)
+                if self.config.peft_path is not None:
+                    if self.config.do_train:
+                        _model = PeftModel.from_pretrained(model, self.config.peft_path)
                         state_dict = dict(_model.state_dict().items())
                         peft_config = LoraConfig(
                             task_type=TaskType.CAUSAL_LM, 
-                            inference_mode=(not self.args.do_train), 
-                            r=self.args.peft_lora_r, 
-                            lora_alpha=self.args.peft_lora_alpha, 
-                            lora_dropout=self.args.peft_lora_dropout
+                            inference_mode=(not self.config.do_train), 
+                            r=self.config.peft_lora_r, 
+                            lora_alpha=self.config.peft_lora_alpha, 
+                            lora_dropout=self.config.peft_lora_dropout
                         )
                         model = get_peft_model(model, peft_config)
                         model.load_state_dict(state_dict)
                         del _model
                         del state_dict
                     else:
-                        model = PeftModel.from_pretrained(model, self.args.peft_path)
+                        model = PeftModel.from_pretrained(model, self.config.peft_path)
                 else:
                     peft_config = LoraConfig(
                         task_type=TaskType.CAUSAL_LM, 
-                        inference_mode=(not self.args.do_train), 
-                        r=self.args.peft_lora_r, 
-                        lora_alpha=self.args.peft_lora_alpha, 
-                        lora_dropout=self.args.peft_lora_dropout
+                        inference_mode=(not self.config.do_train), 
+                        r=self.config.peft_lora_r, 
+                        lora_alpha=self.config.peft_lora_alpha, 
+                        lora_dropout=self.config.peft_lora_dropout
                     )
                     model = get_peft_model(model, peft_config)
                 model.print_trainable_parameters()
@@ -222,17 +224,17 @@ class Distiller(nn.Module):
                 sum([p.nelement() for p in model.parameters()])
             ))
 
-        if self.args.gradient_checkpointing:
+        if self.config.gradient_checkpointing:
             model.gradient_checkpointing_enable()
 
         return model, tokenizer
     
     def load_teacher_model(self):
         log_rank("Loading teacher model...")
-        config = AutoConfig.from_pretrained(self.args.teacher_model_path)
+        config = AutoConfig.from_pretrained(self.config.teacher_model_path)
         config.is_model_parallel = False
 
-        tokenizer = self.load_tokenizer(self.args.teacher_model_type, self.args.teacher_model_path)
+        tokenizer = self.load_tokenizer(self.config.teacher_model_type, self.config.teacher_model_path)
 
         if hasattr(config, "n_embed"):
             self.teacher_hidden_size = config.n_embed
@@ -240,16 +242,16 @@ class Distiller(nn.Module):
             self.teacher_hidden_size = config.hidden_size
 
         model = AutoModelForCausalLM.from_pretrained(
-            self.args.teacher_model_path, 
+            self.config.teacher_model_path, 
             config=config, 
             device_map=None, 
             torch_dtype=self.dtype,
             trust_remote_code=True
         )
 
-        if self.args.peft is not None and self.args.teacher_peft_path is not None:
-            if self.args.peft == "lora":
-                model = PeftModel.from_pretrained(model, self.args.teacher_peft_path)
+        if self.config.peft is not None and self.config.teacher_peft_path is not None:
+            if self.config.peft == "lora":
+                model = PeftModel.from_pretrained(model, self.config.teacher_peft_path)
                 model = model.merge_and_unload()
             else:
                 raise NotImplementedError
@@ -259,19 +261,19 @@ class Distiller(nn.Module):
             ))
         for params in model.parameters():
             params.requires_grad = False
-        return model, {self.args.teacher_model_type: tokenizer}
+        return model, {self.config.teacher_model_type: tokenizer}
     
     def add_optimizer_param_group(self, optimizer):
         if hasattr(self, "projectors"):
-            if self.args.projector_lr:
-                pretrained_proj = self.args.pretrained_projector.split(",") if self.args.pretrained_projector is not None else []
+            if self.config.projector_lr:
+                pretrained_proj = self.config.pretrained_projector.split(",") if self.config.pretrained_projector is not None else []
                 optimizer.add_param_group({
                     "params": [p for b in self.projectors if b not in pretrained_proj for p in self.projectors[b].parameters()],
-                    "lr": self.args.projector_lr
+                    "lr": self.config.projector_lr
                 })
                 optimizer.add_param_group({
                     "params": [p for b in self.projectors if b in pretrained_proj for p in self.projectors[b].parameters()],
-                    "lr": self.args.pretrained_projector_lr
+                    "lr": self.config.pretrained_projector_lr
                 })
             else:
                 optimizer.add_param_group({
