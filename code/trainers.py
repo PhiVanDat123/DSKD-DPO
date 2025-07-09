@@ -19,8 +19,8 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
 
-from .preference_datasets import get_batch_iterator
-from .utils import (
+from utils.preference_datasets import get_batch_iterator
+from utils.utils import (
     slice_and_move_batch_for_device,
     formatted_dict,
     all_gather_if_needed,
@@ -29,7 +29,7 @@ from .utils import (
     rank0_print,
     get_local_dir,
 )
-from .criterions.dual_space_kd_with_cross_model_attention import DualSpaceKDWithCMA
+from criterions.dual_space_kd_with_cross_model_attention import DualSpaceKDWithCMA
 
 import numpy as np
 import wandb
@@ -43,8 +43,10 @@ import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
 
-criterion = DualSpaceKDWithCMA()
-
+def compute_t2s_logits(self, distiller, batch):
+    criterion = DualSpaceKDWithCMA()
+    t2s_logits = criterion.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], attention_mask=batch["attention_mask"], distiller=distiller)
+    return t2s_logits
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
                           average_log_prob: bool = False):
@@ -405,7 +407,7 @@ class BasicTrainer(object):
         return chosen_logps, rejected_logps
     
     def tisdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
-                                  batch: Dict[str, Union[List, torch.LongTensor]]):
+                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
            We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -415,10 +417,12 @@ class BasicTrainer(object):
                            attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
         
         with torch.no_grad():
-            reference_all_logits = reference_model(concatenated_batch['concatenated_input_ids'],
-                                                   attention_mask=concatenated_batch[
-                                                       'concatenated_attention_mask']).logits.to(torch.float32)
+            #reference_all_logits = reference_model(concatenated_batch['concatenated_input_ids'],
+                                                   #attention_mask=concatenated_batch[
+                                                       #'concatenated_attention_mask']).logits.to(torch.float32)
         
+            reference_all_logits = compute_t2s_logits(self, distiller, concatenated_batch)
+
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False)
 
         chosen_logps_margin = all_logps_margin[:batch['chosen_input_ids'].shape[0]]
