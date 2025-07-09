@@ -1,0 +1,2 @@
+model_type: "qwen"
+name_or_path: "Qwen/Qwen2.5-14B-Instruct"

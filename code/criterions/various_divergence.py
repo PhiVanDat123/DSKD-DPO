@@ -59,7 +59,7 @@ class VariousDivergence(CrossEntropyLoss):
             teacher_logits = teacher_outputs.logits
         
         # Qwen has different vocab_size for models in different sizes (see https://github.com/QwenLM/Qwen/issues/419)
-        if self.args.model_type == "qwen":
+        if self.config.model.model_type == "qwen":
             logits = logits[..., :151851]
             teacher_logits = teacher_logits[..., :151851]
         

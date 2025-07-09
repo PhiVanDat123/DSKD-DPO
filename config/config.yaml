@@ -111,6 +111,6 @@ report_logits: false
 
 defaults:
 - _self_
-- model: blank_model_fp32 # basic model configuration
+- model: qwen-2.5-14B-DSKD-DPO # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 - transform: default # which transform configuration to use
