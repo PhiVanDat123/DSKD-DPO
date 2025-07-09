@@ -4,9 +4,9 @@ import torch.distributed as dist
 
 
 class CrossEntropyLoss(nn.Module):
-    def __init__(self, args, padding_id=-100) -> None:
+    def __init__(self, config, padding_id=-100) -> None:
         super(CrossEntropyLoss, self).__init__()
-        self.label_smoothing = args.label_smoothing
+        self.label_smoothing = config.label_smoothing
         self.padding_id = padding_id
     
     def forward(self, distiller, input_data, output_data, logging_output, batch_denom):

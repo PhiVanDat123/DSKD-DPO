@@ -96,6 +96,19 @@ eval_every: 100_000
 # prevent wandb from logging more than once per minimum_log_interval_secs
 minimum_log_interval_secs: 1.0
 
+# use label smoothing for the loss function
+label_smoothing: 0.1
+
+# args for various_divergence
+kd_rate: 0.5
+kd_temperature: 1.0
+teacher_temperature: 1.0
+kd_objective: "forward_kl"
+adaptive_kl_alpha: 0.9
+skew_lambda: 0.7
+report_logits: false
+
+
 defaults:
 - _self_
 - model: blank_model_fp32 # basic model configuration

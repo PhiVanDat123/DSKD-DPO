@@ -3,13 +3,13 @@ from .cross_entropy_loss import CrossEntropyLoss
 
 
 class VariousDivergence(CrossEntropyLoss):
-    def __init__(self, args, padding_id=-100) -> None:
-        super(VariousDivergence, self).__init__(args, padding_id=padding_id)
-        self.kd_rate = args.kd_rate
-        self.kd_temp = args.kd_temperature
-        self.tea_temp = args.teacher_temperature
-        self.kd_objective = args.kd_objective
-        self.args = args
+    def __init__(self, config, padding_id=-100) -> None:
+        super(VariousDivergence, self).__init__(config, padding_id=padding_id)
+        self.kd_rate = config.kd_rate
+        self.kd_temp = config.kd_temperature
+        self.tea_temp = config.teacher_temperature
+        self.kd_objective = config.kd_objective
+        self.config = config
 
         if self.kd_objective == "forward_kl":
             self.dist_func = self.compute_forward_kl_divergence
@@ -72,7 +72,7 @@ class VariousDivergence(CrossEntropyLoss):
         accuracy = self.compute_token_accuracy(logits, output_data["label"])
         log["accuracy"] = accuracy
 
-        if self.args.report_logits:
+        if self.config.report_logits:
             self.record_logits(
                 logits, 
                 output_data["label"], 
@@ -153,7 +153,7 @@ class VariousDivergence(CrossEntropyLoss):
         log=None, 
         use_tea_temp=False
     ):
-        alpha = self.args.adaptive_kl_alpha
+        alpha = self.config.adaptive_kl_alpha
         probs = torch.softmax(
             logits / self.kd_temp, dim=-1, dtype=torch.float32
         )
@@ -203,7 +203,7 @@ class VariousDivergence(CrossEntropyLoss):
 
         student_probs = torch.softmax(logits, -1, dtype=torch.float32)
         teacher_probs = torch.softmax(teacher_logits, -1, dtype=torch.float32)
-        mixed_probs = self.args.skew_lambda * teacher_probs + (1 - self.args.skew_lambda) * student_probs
+        mixed_probs = self.config.skew_lambda * teacher_probs + (1 - self.config.skew_lambda) * student_probs
         mixed_lprobs = torch.log(mixed_probs)
         teacher_lprobs = torch.log_softmax(teacher_logits, -1, dtype=torch.float32)
         kld = (teacher_probs * (teacher_lprobs - mixed_lprobs))
@@ -235,7 +235,7 @@ class VariousDivergence(CrossEntropyLoss):
 
         student_probs = torch.softmax(logits, -1, dtype=torch.float32)
         teacher_probs = torch.softmax(teacher_logits, -1, dtype=torch.float32)
-        mixed_probs = (1 - self.args.skew_lambda) * teacher_probs + self.args.skew_lambda * student_probs
+        mixed_probs = (1 - self.config.skew_lambda) * teacher_probs + self.config.skew_lambda * student_probs
         mixed_lprobs = torch.log(mixed_probs)
         student_lprobs = torch.log_softmax(logits, -1, dtype=torch.float32)
         # teacher_lprobs = torch.log_softmax(teacher_logits / self.tea_temp / self.kd_temp, -1, dtype=torch.float32)

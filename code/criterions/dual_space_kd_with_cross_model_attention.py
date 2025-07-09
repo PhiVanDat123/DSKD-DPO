@@ -4,8 +4,8 @@ from .various_divergence import VariousDivergence
 from ..trainers import concatenated_inputs
 
 class DualSpaceKDWithCMA(VariousDivergence):
-    def __init__(self, args, padding_id=-100) -> None:
-        super().__init__(args, padding_id=padding_id)
+    def __init__(self, config, padding_id=-100) -> None:
+        super().__init__(config, padding_id=padding_id)
         self.distiller = None
 
     def forward(
