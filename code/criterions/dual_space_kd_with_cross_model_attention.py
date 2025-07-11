@@ -8,31 +8,30 @@ class DualSpaceKDWithCMA(VariousDivergence):
         super().__init__(config, padding_id=padding_id)
         self.distiller = None
 
+    '''
     def forward(
         self, 
         distiller, 
-        input_data,
-        attention_mask=None,
+        input_data, 
+        output_data, 
+        logging_output, 
+        batch_denom, 
     ):
         model = distiller.student_model
         teacher_model = distiller.teacher_model
         self.distiller = distiller
-        with torch.no_grad():
-            teacher_model.eval()
-            t2s_logits = teacher_model(
-                input_data[f"teacher_{distiller.teacher_model_type}_input_ids"],
-                attention_mask=input_data[f"teacher_{distiller.teacher_model_type}_attention_mask"],
-                position_ids=input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
-                output_hidden_states=True)
+        outputs = model(
+            input_data["input_ids"],
+            attention_mask=input_data["attention_mask"],
+            position_ids=input_data.get("position_ids", None), 
+            output_hidden_states=True
+        )
+        logits = outputs.logits
+        log = {}
+        loss = self.compute_cross_entropy_loss(
+            outputs.logits, output_data["label"], log=log
+        )[0]
 
-        return t2s_logits
-    
-    def compute_dual_space_kd_loss_with_cma(
-        self, input_data, attention_mask, distiller
-    ):
-        model = distiller.student_model
-        teacher_model = distiller.teacher_model
-        self.distiller = distiller
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
@@ -40,13 +39,42 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 attention_mask=input_data[f"teacher_{distiller.teacher_model_type}_attention_mask"],
                 position_ids=input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
-        batch = {**input_data}
-        concat_batch = concatenated_inputs(batch)
-        #target = output_data["label"]
-        #teacher_target = output_data[f"teacher_{distiller.teacher_model_type}_label"]
         
-        target = concat_batch["concatenated_labels"]
-        teacher_target = concat_batch[f"concatenated_teacher_{distiller.teacher_model_type}_labels"]
+        kd_loss, log = self.compute_dual_space_kd_loss_with_cma(
+            outputs, teacher_outputs, input_data, output_data, distiller, log
+        )
+        loss = (1.0 - self.kd_rate) * loss + self.kd_rate * kd_loss
+        log["loss"] = loss
+
+        accuracy = self.compute_token_accuracy(
+            logits, output_data["label"], 
+        )
+        log["accuracy"] = accuracy
+
+        logging_output = self.record_logging_output(
+            logging_output, batch_denom, log
+        )
+        return loss / batch_denom, logging_output
+    
+    '''
+    def compute_dual_space_kd_loss_with_cma(
+        self, input_data, output_data, distiller
+    ):  
+        self.distiller = distiller
+        model = distiller.student_model
+        teacher_model = distiller.teacher_model
+        concat_input_data = concatenated_inputs(input_data)
+        with torch.no_grad():
+            teacher_model.eval()
+            teacher_outputs = teacher_model(
+                concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"],
+                attention_mask=concat_input_data[f"teacher_{distiller.teacher_model_type}_attention_mask"],
+                position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
+                output_hidden_states=True)
+        
+        concat_output_data = concatenated_inputs(output_data)
+        target = concat_output_data["label"]
+        teacher_target = concat_output_data[f"teacher_{distiller.teacher_model_type}_label"]
         
         pad_mask = target.ne(self.padding_id)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
@@ -80,22 +108,12 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        #formal_input = torch.where(pad_mask, input_data["input_ids"], torch.zeros_like(target))
-        formal_input = torch.where(
-        pad_mask,
-        concat_batch["concatenated_input_ids"],
-        torch.zeros_like(target)
-        )
+        formal_input = torch.where(pad_mask, concat_input_data["input_ids"], torch.zeros_like(target))
         stu_input_embeds = stu_embed_tokens(formal_input).detach()
         stu_target_embeds = stu_embed_tokens(formal_target).detach()
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        #formal_teacher_input = torch.where(teacher_pad_mask, input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(
-        teacher_pad_mask,
-        concat_batch[f"concatenated_teacher_{distiller.teacher_model_type}_input_ids"],
-        torch.zeros_like(teacher_target),
-        )
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
 
@@ -108,7 +126,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float()
         tea_k_hiddens = norm_tea_index_embeds.float()
-
 
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
@@ -124,5 +141,5 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_logits = t2s_hiddens.matmul(
             distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
         )
-   
-        return t2s_logits
+        
+        return t2s_logits, target

@@ -45,9 +45,9 @@ import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
 
-def compute_t2s_logits(self, distiller, batch):
-    criterion = DualSpaceKDWithCMA()
-    t2s_logits = criterion.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], attention_mask=batch["attention_mask"], distiller=distiller)
+def compute_t2s_logits(self, distiller, batch, config):
+    criterion = DualSpaceKDWithCMA(config, padding_id=-100)
+    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
     return t2s_logits
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
@@ -335,7 +335,7 @@ class BasicTrainer(object):
         self.base_data_dir = config.base_data_dir
 
         self.loss = CrossEntropyLoss(config, padding_id=-100)
-        self.projector_trainer = DualSpaceKDWithCMA(config, padding_id=-100)
+        self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
         self.distiller = Distiller(config, device)
 
         tokenizer_name_or_path = config.model.tokenizer_name_or_path or config.model.name_or_path
@@ -413,7 +413,7 @@ class BasicTrainer(object):
         return chosen_logps, rejected_logps
     
     def tisdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
-                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller):
+                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller, config):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
            We do this to avoid doing two forward passes, because it's faster for FSDP.
@@ -427,7 +427,7 @@ class BasicTrainer(object):
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-            reference_all_logits = compute_t2s_logits(self, distiller, concatenated_batch)
+            reference_all_logits = compute_t2s_logits(self, distiller, concatenated_batch, config)
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False)
 
@@ -692,7 +692,7 @@ class BasicTrainer(object):
             #### END TRAINING ####
     '''
 
-    def train(self):
+    def train(self, distiller, batch, config):
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(
             self.policy.parameters(), lr=self.config.lr
@@ -709,12 +709,13 @@ class BasicTrainer(object):
         if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
             self.reference_model.eval()
 
-        self.projector_trainer.distiller = self.distiller
-        projector_optimizer = torch.optim.Adam(
-            self.projectors.parameters(), lr=self.config.projector_lr
+
+        self.distiller.set_and_load_existing_projectors()
+        self.projector_optimizer = torch.optim.Adam(
+            self.distiller.projectors.parameters(), lr=self.config.projector_lr
         )
-        projector_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            projector_optimizer,
+        self.projector_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.projector_optimizer,
             lr_lambda=lambda step: min(1.0, (step + 1) / (self.config.projector_warmup_steps + 1))
         )
 
@@ -723,9 +724,66 @@ class BasicTrainer(object):
         last_log = None
 
         for batch in self.train_iterator:
+            #### BEGIN EVALUATION ####
+            if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
+                rank0_print(f'Running evaluation after {self.example_counter} train examples')
+                self.policy.eval()
+
+                all_eval_metrics = defaultdict(list)
+                if self.config.sample_during_eval:
+                    all_policy_samples, all_reference_samples = [], []
+                    policy_text_table = wandb.Table(columns=["step", "prompt", "sample"])
+                    if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
+                        reference_text_table = wandb.Table(columns=["step", "prompt", "sample"])
+
+                for eval_batch in (tqdm.tqdm(self.eval_batches, desc='Computing eval metrics') if self.rank == 0 else self.eval_batches):
+                    local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
+                    with torch.no_grad():
+                        _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False)
+
+                    for k, v in eval_metrics.items():
+                        all_eval_metrics[k].extend(v)
+
+                if self.config.sample_during_eval:
+                    if self.config.n_eval_model_samples < self.config.eval_batch_size:
+                        rank0_print(f'Warning: n_eval_model_samples ({self.config.n_eval_model_samples}) < eval_batch_size ({self.config.eval_batch_size}). Sampling from the first complete eval batch of prompts.')
+                        sample_batches = self.eval_batches[:1]
+                    else:
+                        n_sample_batches = self.config.n_eval_model_samples // self.config.eval_batch_size
+                        sample_batches = self.eval_batches[:n_sample_batches]
+                    for eval_batch in (tqdm.tqdm(sample_batches, desc='Generating samples...') if self.rank == 0 else sample_batches):
+                        local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
+                        policy_samples, reference_samples = self.get_batch_samples(local_eval_batch)
+
+                        all_policy_samples.extend(policy_samples)
+                        all_reference_samples.extend(reference_samples)
+
+                        for prompt, sample in zip(eval_batch['prompt'], policy_samples):
+                            policy_text_table.add_data(self.example_counter, prompt, sample)
+                        if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
+                            for prompt, sample in zip(eval_batch['prompt'], reference_samples):
+                                reference_text_table.add_data(self.example_counter, prompt, sample)
+
+                mean_eval_metrics = {k: sum(v) / len(v) for k, v in all_eval_metrics.items()}
+                rank0_print(f'eval after {self.example_counter}: {formatted_dict(mean_eval_metrics)}')
+                if self.config.sample_during_eval:                    
+                    rank0_print(json.dumps(all_policy_samples[:10], indent=2))
+                    if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
+                        rank0_print(json.dumps(all_reference_samples[:10], indent=2))
+
+                if self.config.wandb.enabled and self.rank == 0:
+                    wandb.log(mean_eval_metrics, step=self.example_counter)
+
+                    if self.config.sample_during_eval:
+                        wandb.log({"policy_samples": policy_text_table}, step=self.example_counter)
+                        if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
+                            wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
+
+            #### END EVALUATION ####
+        
             ### === Phase 1: Train Projector ===
             self.policy.eval()
-            projector_optimizer.zero_grad()
+            self.projector_optimizer.zero_grad()
 
             for microbatch_idx in range(self.config.gradient_accumulation_steps):
                 global_microbatch = slice_and_move_batch_for_device(
@@ -735,29 +793,14 @@ class BasicTrainer(object):
                     global_microbatch, self.rank, self.world_size, self.rank
                 )
 
-                #  Không cho phép student model học trong phase projector
-                with torch.no_grad():
-                    t2s_logits = self.projector_trainer.compute_dual_space_kd_loss_with_cma(
-                        local_microbatch,
-                        local_microbatch.get("attention_mask"),
-                        self
-                    )
+                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
 
                 #  Projector loss vẫn cần tính gradient
-                projector_loss, _ = self.loss(
-                    self,
-                    input_data={
-                        "input_ids": local_microbatch["input_ids"],
-                        "attention_mask": local_microbatch["attention_mask"]
-                    },
-                    output_data={"label": local_microbatch["label"]},
-                    logging_output={},
-                    batch_denom=self.config.batch_size,
-                )
+                projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
                 (projector_loss / self.config.gradient_accumulation_steps).backward()
 
-            projector_optimizer.step()
-            projector_scheduler.step()
+            self.projector_optimizer.step()
+            self.projector_scheduler.step()
 
             ### === Phase 2: Train Student Model ===
             self.policy.train()
