@@ -1,55 +1,124 @@
-import torch
-torch.backends.cuda.matmul.allow_tf32 = True
-import torch.nn as nn
-import transformers
-from utils import get_local_dir, get_local_run_dir, disable_dropout, init_distributed, get_open_port, build_exp_name
 import os
-import hydra
-import torch.multiprocessing as mp
-from omegaconf import OmegaConf, DictConfig
-import trainers
-import wandb
-import json
-import socket
-from typing import Optional, Set, List, Union
+
+os.environ["WANDB_SILENT"] = "true"
 import resource
+import sys
+from typing import Optional, Set
+
+import hydra
+import torch
+import torch.multiprocessing as mp
+import torch.nn as nn
+import trainers
+import transformers
+import wandb
+from huggingface_hub import login
+from omegaconf import DictConfig, OmegaConf
 from utils.transform_config import TransformConfig, get_transform_config
+from utils.utils import (
+    build_exp_name,
+    disable_dropout,
+    # get_local_dir,
+    get_local_run_dir,
+    get_open_port,
+    init_distributed,
+)
+
+torch.backends.cuda.matmul.allow_tf32 = True
+
+# Replace 'your_token_here' with the token you got from Hugging Face
+#login(token="")
+
+#wandb.login(key="")
+
+OmegaConf.register_new_resolver(
+    "get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir)
+)
+OmegaConf.register_new_resolver(
+    "build_exp_name",
+    lambda loss_name,
+    policy_model_name,
+    datasets,
+    reverse_dataset,
+    transform,
+    reference_model_name: build_exp_name(
+        loss_name, policy_model_name, datasets, reverse_dataset, transform, reference_model_name
+    ),
+)
+# functions that dynamically compute configuration values at access time
 
 
-OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
-OmegaConf.register_new_resolver("build_exp_name", lambda loss_name, model_name, datasets, reverse_dataset, transform: build_exp_name(loss_name, model_name, datasets, reverse_dataset, transform))
-
-
-def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
+def worker_main(
+    rank: int,
+    world_size: int,
+    config: DictConfig,
+    policy: nn.Module,
+    reference_model: Optional[nn.Module] = None,
+):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
-    if 'FSDP' in config.trainer:
-        init_distributed(rank, world_size, port=config.fsdp_port)
-    
-    if config.debug:
-        wandb.init = lambda *args, **kwargs: None
-        wandb.log = lambda *args, **kwargs: None
+    log_dir = "log"  # Or any directory you prefer
+    os.makedirs(log_dir, exist_ok=True)
+    sys.stdout = open(os.path.join(log_dir, f"rank_{rank}_stdout.log"), "w")
+    sys.stderr = open(os.path.join(log_dir, f"rank_{rank}_stderr.log"), "w")
 
-    if rank == 0 and config.wandb.enabled:
-        os.environ['WANDB_CACHE_DIR'] = get_local_dir(config.output_dir)
-        wandb.init(
-            entity=config.wandb.entity,
-            project=config.wandb.project,
-            config=OmegaConf.to_container(config),
-            dir=get_local_dir(config.output_dir),
-            name=config.exp_name,
+    print(f"[Rank {rank}] Worker started.")  # Add print statements early
+    # print(f"[Rank {rank}] Worker started. Received world_size_arg: {world_size}", flush=True)
+
+    try:
+        if "FSDP" in config.trainer:
+            init_distributed(rank, world_size, port=config.fsdp_port)
+            print(f"[Rank {rank}] Distributed initialized successfully.")
+
+        if config.debug:
+            wandb.init = lambda *args, **kwargs: None
+            wandb.log = lambda *args, **kwargs: None
+            # wandb.watch = lambda *args, **kwargs: None
+
+        if rank == 0 and config.wandb.enabled:
+            # os.environ["WANDB_CACHE_DIR"] = get_local_dir(config.output_dir)
+            wandb.init(
+                entity=config.wandb.entity,
+                project=config.wandb.project,
+                config=OmegaConf.to_container(config),
+                # dir=get_local_dir(config.output_dir),
+                name=config.exp_name,
+            )
+            # wandb.watch(policy, log="all", log_freq=100)
+
+        # Convert transform configuration to a proper object if needed
+        # if 'transform' in config and isinstance(config.transform, (dict, str)):
+        transform_config = get_transform_config(config.transform)
+
+        TrainerClass = getattr(trainers, config.trainer)
+        print(f"Creating trainer on process {rank} with world size {world_size}")
+        trainer = TrainerClass(
+            policy=policy,
+            config=config,
+            seed=config.seed,
+            reference_model=reference_model,
+            rank=rank,
+            world_size=world_size,
+            transform_config=transform_config,
+            run_dir=config.local_run_dir,
         )
 
-    # Convert transform configuration to a proper object if needed
-    # if 'transform' in config and isinstance(config.transform, (dict, str)):
-    transform_config = get_transform_config(config.transform)
-    
-    TrainerClass = getattr(trainers, config.trainer)
-    print(f'Creating trainer on process {rank} with world size {world_size}')
-    trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model, 
-                         rank=rank, world_size=world_size, transform_config=transform_config)
+        trainer.train()
+        trainer.save()
+    except Exception as e:
+        print(
+            f"[Rank {rank}] Exception occurred: {e}", file=sys.stderr
+        )  # Log exception before potentially exiting
+        import traceback
 
-    trainer.train()
-    trainer.save()
+        traceback.print_exc(file=sys.stderr)
+        raise  # Re-raise the exception so mp.spawn knows it failed
+    finally:
+        print(f"[Rank {rank}] Worker finished.")
+        # Ensure files are flushed and closed (often happens automatically on exit, but explicit flush/close can help)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # sys.stdout.close() # Closing might interfere with later prints/errors? Maybe just flush.
+        # sys.stderr.close()
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
@@ -59,7 +128,7 @@ def main(config: DictConfig):
     # Load transform configuration before resolving experiment name
     if isinstance(config.transform, str):
         # Check if it's a path to a configuration file
-        if os.path.exists(config.transform) and config.transform.endswith('.yaml'):
+        if os.path.exists(config.transform) and config.transform.endswith(".yaml"):
             transform_config = TransformConfig.from_file(config.transform)
             print(f"Loaded transform configuration from {config.transform}")
         # Check if it's a preset name
@@ -74,9 +143,11 @@ def main(config: DictConfig):
         # Using the default configuration from OmegaConf
         transform_config = config.transform
         print("Using transform configuration from config file")
-    
+
     # Update config.transform with the full config object for experiment naming
-    config.transform = transform_config.to_dict() if hasattr(transform_config, 'to_dict') else transform_config
+    config.transform = (
+        transform_config.to_dict() if hasattr(transform_config, "to_dict") else transform_config
+    )
 
     # Now resolve hydra references with the updated transform config
     OmegaConf.resolve(config)
@@ -86,58 +157,78 @@ def main(config: DictConfig):
         raise ValueError(f"Got missing keys in config:\n{missing_keys}")
 
     if config.eval_every % config.batch_size != 0:
-        print('WARNING: eval_every must be divisible by batch_size')
-        print('Setting eval_every to', config.eval_every - config.eval_every % config.batch_size)
+        print("WARNING: eval_every must be divisible by batch_size")
+        print("Setting eval_every to", config.eval_every - config.eval_every % config.batch_size)
         config.eval_every = config.eval_every - config.eval_every % config.batch_size
 
-    if 'FSDP' in config.trainer and config.fsdp_port is None:
+    if "FSDP" in config.trainer and config.fsdp_port is None:
         free_port = get_open_port()
-        print('no FSDP port specified; using open port for FSDP:', free_port)
+        print("no FSDP port specified; using open port for FSDP:", free_port)
         config.fsdp_port = free_port
 
     # Print transform configuration details
-    method = transform_config.get('method', 'origin')
+    method = transform_config.get("method", "origin")
     print(f"Transform method: {method}")
     if method in transform_config:
         print(f"Transform parameters: {transform_config[method]}")
     print(OmegaConf.to_yaml(config))
 
-    config_path = os.path.join(config.local_run_dir, 'config.yaml')
-    with open(config_path, 'w') as f:
-        OmegaConf.save(config, f)
+    # config_path = os.path.join(config.local_run_dir, "config.yaml")
+    # with open(config_path, "w") as f:
+    #     OmegaConf.save(config, f)
 
-    print('=' * 80)
-    print(f'Writing to {socket.gethostname()}:{config.local_run_dir}')
-    print('=' * 80)
- 
-    os.environ['XDG_CACHE_HOME'] = get_local_dir(config.output_dir)
-    print('building policy')
-    model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
+    # print("=" * 80)
+    # print(f"Writing to {socket.gethostname()}:{config.local_run_dir}")
+    # print("=" * 80)
+
+    # os.environ["XDG_CACHE_HOME"] = get_local_dir(config.output_dir)
+    print("building policy")
+    model_kwargs = {"device_map": "balanced"} if config.trainer == "BasicTrainer" else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
     policy = transformers.AutoModelForCausalLM.from_pretrained(
-        config.model.policy_name_or_path, low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+        config.model.policy_name_or_path,
+        low_cpu_mem_usage=True,
+        torch_dtype=policy_dtype,
+        **model_kwargs,
+    )
     disable_dropout(policy)
 
-    if config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-        print('building reference model')
+    if config.loss.name in {"dpo", "ipo", "tdpo", "tisdpo", "KD_tisdpo", "tisdpo_KDAlign"}:
+        print("building reference model")
         reference_model_dtype = getattr(torch, config.model.reference_dtype)
         reference_model = transformers.AutoModelForCausalLM.from_pretrained(
-            config.model.reference_name_or_path, low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
+            config.model.reference_name_or_path,
+            low_cpu_mem_usage=True,
+            torch_dtype=reference_model_dtype,
+            **model_kwargs,
+        )
         disable_dropout(reference_model)
     else:
         reference_model = None
-    
-    if 'FSDP' in config.trainer:
+
+    if "FSDP" in config.trainer:
         world_size = torch.cuda.device_count()
-        print('starting', world_size, 'processes for FSDP training')
+
+        # print(f"--- Main Process ---")
+        # print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        # print(f"torch.cuda.device_count(): {world_size}")
+        # print(f"Setting nprocs to: {world_size}")
+        # print(f"Passing world_size arg as: {world_size}")
+        # print(f"--- End Main Process ---")
+        print("starting", world_size, "processes for FSDP training")
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
-        print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
-        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
+        print(f"setting RLIMIT_NOFILE soft limit to {hard} from {soft}")
+        mp.spawn(
+            worker_main,
+            nprocs=world_size,
+            args=(world_size, config, policy, reference_model),
+            join=True,
+        )
     else:
-        print('starting single-process worker')
+        print("starting single-process worker")
         worker_main(0, 1, config, policy, reference_model)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
