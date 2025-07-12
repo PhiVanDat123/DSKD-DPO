@@ -1,0 +1,15 @@
+reference_name_or_path: mistralai/Mistral-7B-v0.3
+policy_name_or_path: Qwen/Qwen2.5-1.5B
+teacher_name_or_path: mistralai/Mistral-7B-v0.3
+student_name_or_path: Qwen/Qwen2.5-1.5B
+
+teacher_tokenizer_name_or_path: null
+student_tokenizer_name_or_path: null
+
+policy_block_name: Qwen2DecoderLayer
+reference_block_name: MistralDecoderLayer
+
+policy_dtype: float32
+reference_dtype: float32
+teacher_dtype: float32
+fsdp_policy_mp: null

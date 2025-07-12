@@ -114,7 +114,7 @@ teacher_model_type: "qwen"
 model_path: "meta-llama/Llama-3.1-8B"
 model_type: "llama"
 model_dtype: "fp32" 
-projector_config_path: "D:\codePython\DSKD-DPO\config\projector_config\projector_config.json"
+projector_config_path: "config/projector/projector_config.json"
 teacher_to_student_token_mapping: None
 teacher_to_student_id_mapping: None
 peft: None
@@ -130,6 +130,6 @@ pretrained_projector_lr: 1e-4
 
 defaults:
 - _self_
-- model: qwen-2.5-14B-DSKD-DPO # basic model configuration
+- model: null # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 - transform: default # which transform configuration to use

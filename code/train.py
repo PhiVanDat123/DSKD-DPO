@@ -13,7 +13,7 @@ import json
 import socket
 from typing import Optional, Set, List, Union
 import resource
-from transform_config import TransformConfig, get_transform_config
+from utils.transform_config import TransformConfig, get_transform_config
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
@@ -115,14 +115,14 @@ def main(config: DictConfig):
     model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
     policy = transformers.AutoModelForCausalLM.from_pretrained(
-        config.model.name_or_path, low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+        config.model.policy_name_or_path, low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
     disable_dropout(policy)
 
     if config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
         print('building reference model')
         reference_model_dtype = getattr(torch, config.model.reference_dtype)
         reference_model = transformers.AutoModelForCausalLM.from_pretrained(
-            config.model.name_or_path, low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
+            config.model.reference_name_or_path, low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
         disable_dropout(reference_model)
     else:
         reference_model = None
