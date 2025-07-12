@@ -896,20 +896,42 @@ class BasicTrainer(object):
 
 
 class FSDPTrainer(BasicTrainer):
-    def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, transform_config = None):
-        """A trainer subclass that uses PyTorch FSDP to shard the model across multiple GPUs.
-        
-           This trainer will shard both the policy and reference model across all available GPUs.
-           Models are sharded at the block level, where the block class name is provided in the config.
-        """
+    def __init__(
+        self,
+        policy: nn.Module,
+        seed: int,
+        run_dir: str,
+        config: DictConfig,
+        reference_model: Optional[nn.Module] = None,
+        transform_config=None,
+        rank: int = 0,
+        world_size: int = 1,
+    ):
+        super().__init__(
+            policy,
+            seed,
+            run_dir,
+            config,
+            reference_model,
+            transform_config,
+            rank,
+            world_size,
+        )
+        assert config.model.policy_block_name is not None, (
+            "must specify model.policy_block_name (e.g., GPT2Block or GPTNeoXLayer) for FSDP"
+        )
+        assert config.model.reference_block_name is not None, (
+            "must specify model.reference_block_name (e.g., GPT2Block or GPTNeoXLayer) for FSDP"
+        )
 
-        super().__init__(policy, config, seed, run_dir, reference_model, rank, world_size, transform_config=transform_config)
-        assert config.model.block_name is not None, 'must specify model.block_name (e.g., GPT2Block or GPTNeoXLayer) for FSDP'
+        policy_wrap_class = get_block_class_from_model(policy, config.model.policy_block_name)
 
-        wrap_class = get_block_class_from_model(policy, config.model.block_name)
-        model_auto_wrap_policy = functools.partial(transformer_auto_wrap_policy, transformer_layer_cls={wrap_class},)
+        model_auto_wrap_policy = functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls={policy_wrap_class},
+        )
 
-        shared_fsdp_kwargs = dict(
+        policy_fsdp_kwargs = dict(
             auto_wrap_policy=model_auto_wrap_policy,
             sharding_strategy=ShardingStrategy.FULL_SHARD,
             cpu_offload=CPUOffload(offload_params=False),
@@ -918,44 +940,71 @@ class FSDPTrainer(BasicTrainer):
             ignored_modules=None,
             limit_all_gathers=False,
             use_orig_params=False,
-            sync_module_states=False
+            sync_module_states=False,
         )
 
-        rank0_print('Sharding policy...')
-        mp_dtype = getattr(torch, config.model.fsdp_policy_mp) if config.model.fsdp_policy_mp is not None else None
-        policy_mp_policy = MixedPrecision(param_dtype=mp_dtype, reduce_dtype=mp_dtype, buffer_dtype=mp_dtype)
-        self.policy = FSDP(policy, **shared_fsdp_kwargs, mixed_precision=policy_mp_policy)
+        rank0_print("Sharding policy model ...")
+        mp_dtype = (
+            getattr(torch, config.model.fsdp_policy_mp)
+            if config.model.fsdp_policy_mp is not None
+            else None
+        )
+        policy_mp_policy = MixedPrecision(
+            param_dtype=mp_dtype, reduce_dtype=mp_dtype, buffer_dtype=mp_dtype
+        )
+        self.policy = FSDP(policy, **policy_fsdp_kwargs, mixed_precision=policy_mp_policy)
 
         if config.activation_checkpointing:
-            rank0_print('Attempting to enable activation checkpointing...')
+            rank0_print("Attempting to enable activation checkpointing...")
             try:
                 # use activation checkpointing, according to:
                 # https://pytorch.org/blog/scaling-multimodal-foundation-models-in-torchmultimodal-with-pytorch-distributed/
                 #
                 # first, verify we have FSDP activation support ready by importing:
                 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-                    checkpoint_wrapper,
-                    apply_activation_checkpointing,
                     CheckpointImpl,
+                    apply_activation_checkpointing,
+                    checkpoint_wrapper,
                 )
+
                 non_reentrant_wrapper = functools.partial(
                     checkpoint_wrapper,
                     offload_to_cpu=False,
                     checkpoint_impl=CheckpointImpl.NO_REENTRANT,
                 )
             except Exception as e:
-                rank0_print('FSDP activation checkpointing not available:', e)
+                rank0_print("FSDP activation checkpointing not available:", e)
             else:
-                check_fn = lambda submodule: isinstance(submodule, wrap_class)
-                rank0_print('Applying activation checkpointing wrapper to policy...')
-                apply_activation_checkpointing(self.policy, checkpoint_wrapper_fn=non_reentrant_wrapper, check_fn=check_fn)
-                rank0_print('FSDP activation checkpointing enabled!')
+                check_fn = lambda submodule: isinstance(submodule, policy_wrap_class)
+                rank0_print("Applying activation checkpointing wrapper to policy...")
+                apply_activation_checkpointing(
+                    self.policy, checkpoint_wrapper_fn=non_reentrant_wrapper, check_fn=check_fn
+                )
+                rank0_print("FSDP activation checkpointing enabled!")
 
-        if config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-            rank0_print('Sharding reference model...')
-            self.reference_model = FSDP(reference_model, **shared_fsdp_kwargs)
-        
-        print('Loaded model on rank', rank)
+        if config.loss.name in {"dpo", "ipo", "tdpo", "tisdpo", "KD_tisdpo", "tisdpo_KDAlign"}:
+            reference_wrap_class = get_block_class_from_model(
+                reference_model, config.model.reference_block_name
+            )
+            reference_model_auto_wrap_policy = functools.partial(
+                transformer_auto_wrap_policy,
+                transformer_layer_cls={reference_wrap_class},
+            )
+            reference_fsdp_kwargs = dict(
+                auto_wrap_policy=reference_model_auto_wrap_policy,
+                sharding_strategy=ShardingStrategy.FULL_SHARD,
+                cpu_offload=CPUOffload(offload_params=False),
+                backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+                device_id=rank,
+                ignored_modules=None,
+                limit_all_gathers=False,
+                use_orig_params=False,
+                sync_module_states=False,
+            )
+            rank0_print("Sharding reference model...")
+            self.reference_model = FSDP(reference_model, **reference_fsdp_kwargs)
+
+        print("Loaded model on rank", rank)
         dist.barrier()
 
     def clip_gradient(self):
@@ -965,88 +1014,75 @@ class FSDPTrainer(BasicTrainer):
     def save(self, output_dir=None, metrics=None):
         """Save policy and tokenizer state to disk, gathering from all processes and saving only on the rank 0 process."""
         save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
-        with FSDP.state_dict_type(self.policy, StateDictType.FULL_STATE_DICT, state_dict_config=save_policy):
+        with FSDP.state_dict_type(
+            self.policy, StateDictType.FULL_STATE_DICT, state_dict_config=save_policy
+        ):
             policy_state_dict = self.policy.state_dict()
 
         if self.rank == 0:
             # Save model using transformers save_pretrained
             if output_dir is None:
-                model_save_dir = self.run_dir
+                model_save_dir = os.path.join(self.run_dir, "lastest")
             else:
                 model_save_dir = output_dir
-            
+
             os.makedirs(model_save_dir, exist_ok=True)
-            
+
             # Get the original model class and instantiate it directly
             from transformers import AutoModelForCausalLM
-            model_name = self.config.model.name_or_path
+
+            model_name = self.config.model.policy_name_or_path
             unwrapped_model = AutoModelForCausalLM.from_pretrained(model_name)
             unwrapped_model.load_state_dict(policy_state_dict)
-            
+
             # Save using transformers save_pretrained
             unwrapped_model.save_pretrained(model_save_dir)
             rank0_print(f"Model saved to {model_save_dir} using save_pretrained")
             del unwrapped_model
-            
+
             # Save tokenizer alongside the model
-            self.tokenizer.save_pretrained(model_save_dir)
-            
+            self.tokenizer[self.config.policy_mode].save_pretrained(model_save_dir)
+
             # Save metrics separately
             if metrics is not None:
                 metrics_file = os.path.join(model_save_dir, "training_metrics.json")
                 with open(metrics_file, "w") as f:
                     json.dump({"step": self.example_counter, "metrics": metrics}, f)
-            
+
         del policy_state_dict
         dist.barrier()
-
-
-class TensorParallelTrainer(BasicTrainer):
-    def __init__(self, policy, config, seed, run_dir, reference_model=None, rank=0, world_size=1, transform_config=None):
-        """A trainer subclass that uses TensorParallel to shard the model across multiple GPUs.
-
-           Based on https://github.com/BlackSamorez/tensor_parallel. Note sampling is extremely slow,
-              see https://github.com/BlackSamorez/tensor_parallel/issues/66.
-        """
-        super().__init__(policy, config, seed, run_dir, reference_model, rank, world_size, transform_config=transform_config)
-        
-        rank0_print('Sharding policy...')
-        self.policy = tp.tensor_parallel(policy, sharded=True)
-        if config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-            rank0_print('Sharding reference model...')
-            self.reference_model = tp.tensor_parallel(reference_model, sharded=False)
-
-    def save(self, output_dir=None, metrics=None):
-        """Save (unsharded) policy state to disk."""
-        with tp.save_tensor_parallel(self.policy):
-            policy_state_dict = self.policy.state_dict()
     
-        # Save model using transformers save_pretrained
-        if output_dir is None:
-            model_save_dir = os.path.join(self.run_dir, f'LATEST')
-        else:
-            model_save_dir = output_dir
+    def save_checkpoint(self, step: int, output_dir: Optional[str] = None):
+        save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(
+            self.policy, StateDictType.FULL_STATE_DICT, state_dict_config=save_policy
+        ):
+            policy_state_dict = self.policy.state_dict()
+
+        if self.rank == 0:
+            # Save model using transformers save_pretrained
+            if output_dir is None:
+                model_save_dir = os.path.join(self.run_dir, str(step))
+            else:
+                model_save_dir = output_dir
+
+            os.makedirs(model_save_dir, exist_ok=True)
+
+            # Get the original model class and instantiate it directly
+            from transformers import AutoModelForCausalLM
+
+            model_name = self.config.model.policy_name_or_path
+            unwrapped_model = AutoModelForCausalLM.from_pretrained(model_name)
+            unwrapped_model.load_state_dict(policy_state_dict)
             
-        os.makedirs(model_save_dir, exist_ok=True)
-            
-        # Get the original model class and instantiate it directly
-        from transformers import AutoModelForCausalLM
-        model_name = self.config.model.name_or_path
-        unwrapped_model = AutoModelForCausalLM.from_pretrained(model_name)
-        unwrapped_model.load_state_dict(policy_state_dict)
-        
-        # Save using transformers save_pretrained
-        unwrapped_model.save_pretrained(model_save_dir)
-        rank0_print(f"Model saved to {model_save_dir} using save_pretrained")
-        del unwrapped_model
-            
-        # Save tokenizer alongside the model
-        self.tokenizer.save_pretrained(model_save_dir)
-            
-        # Save metrics separately
-        if metrics is not None:
-            metrics_file = os.path.join(model_save_dir, "training_metrics.json")
-            with open(metrics_file, "w") as f:
-                json.dump({"step": self.example_counter, "metrics": metrics}, f)
-        
+            # Save using transformers save_pretrained
+            unwrapped_model.save_pretrained(model_save_dir)
+            rank0_print(f"Checkpoint saved to {model_save_dir} using save_pretrained")
+            del unwrapped_model
+
+            # Save tokenizer alongside the model
+            self.tokenizer[self.config.policy_mode].save_pretrained(model_save_dir)
+
         del policy_state_dict
+        dist.barrier()
+        """Save a checkpoint"""
