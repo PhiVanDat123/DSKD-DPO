@@ -15,8 +15,7 @@ echo "Current directory: $(pwd)"
   loss=sft \
   eval_every=5 \
   policy_mode=student \
-  datasets=tonyshelby/sample \
+  datasets=pvdhihihi/tis-dpo-5k \
   gradient_accumulation_steps=2 batch_size=4 eval_batch_size=4 \
   trainer=FSDPTrainer sample_during_eval=false \
   debug=false \
-  save_repo=tonyshelby/Qwen2.5_0.5B_SFT_sample_log
