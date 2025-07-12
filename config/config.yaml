@@ -1,6 +1,10 @@
 # random seed for batch sampling
 seed: 0
 
+#mode
+policy_mode: student
+reference_mode: null
+
 # number of iterators in training
 train_iterator: 100
 
