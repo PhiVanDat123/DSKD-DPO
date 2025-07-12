@@ -8,10 +8,10 @@ import torch
 import tqdm
 from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import login
-from loss_utils import get_token_logps, prompt_remove
+from utils.loss_utils import get_token_logps, prompt_remove
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from preference_datasets import get_collate_fn
+from utils.preference_datasets import get_collate_fn
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
