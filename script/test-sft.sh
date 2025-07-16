@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd script
+#cd script
 echo "Current directory: $(pwd)"
 
 /usr/local/envs/DSKD-DPO_train/bin/python -u train.py \
