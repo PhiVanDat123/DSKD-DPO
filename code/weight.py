@@ -3,6 +3,7 @@ import json
 import multiprocessing as mp
 import os
 import time
+import math
 
 import torch
 import tqdm
@@ -12,16 +13,106 @@ from utils.loss_utils import get_token_logps, prompt_remove
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.preference_datasets import get_collate_fn
+from utils.distill_datasets import DistillDataset
+from trainers import concatenated_inputs
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
+def compute_logits_target(
+        self, input_data, output_data, distiller, teacher_model
+    ):  
+        self.distiller = distiller
+        model = distiller.student_model
+        teacher_model = teacher_model
+        concat_input_data = concatenated_inputs(input_data)
+        with torch.no_grad():
+            teacher_model.eval()
+            teacher_outputs = teacher_model(
+                concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"],
+                attention_mask=concat_input_data[f"teacher_{distiller.teacher_model_type}_attention_mask"],
+                position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
+                output_hidden_states=True)
+        
+        concat_output_data = concatenated_inputs(output_data)
+        target = concat_output_data["label"]
+        teacher_target = concat_output_data[f"teacher_{distiller.teacher_model_type}_label"]
+        
+        pad_mask = target.ne(self.padding_id)
+        teacher_pad_mask = teacher_target.ne(self.padding_id)
+
+        teacher_hiddens = teacher_outputs.hidden_states[-1]
+
+        if hasattr(distiller.student_model, "model") \
+            and hasattr(distiller.student_model.model, "embed_tokens"):
+            stu_embed_tokens = distiller.student_model.model.embed_tokens
+        elif hasattr(distiller.student_model, "model") \
+            and hasattr(distiller.student_model.model, "model") \
+            and hasattr(distiller.student_model.model.model, "embed_tokens"):
+            stu_embed_tokens = distiller.student_model.model.model.embed_tokens
+        elif hasattr(distiller.student_model, "transformer") \
+            and hasattr(distiller.student_model.transformer, "wte"):
+            stu_embed_tokens = distiller.student_model.transformer.wte
+        else:
+            raise NotImplementedError
+
+        if hasattr(distiller.teacher_model, "model") \
+            and hasattr(distiller.teacher_model.model, "embed_tokens"):
+            tea_embed_tokens = distiller.teacher_model.model.embed_tokens
+        elif hasattr(distiller.teacher_model, "model") \
+            and hasattr(distiller.teacher_model.model, "model") \
+            and hasattr(distiller.teacher_model.model.model, "embed_tokens"):
+            tea_embed_tokens = distiller.teacher_model.model.model.embed_tokens
+        elif hasattr(distiller.teacher_model, "transformer") \
+            and hasattr(distiller.teacher_model.model, "wte"):
+            tea_embed_tokens = distiller.teacher_model.transformer.wte
+        else:
+            raise NotImplementedError
+
+        formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
+        formal_input = torch.where(pad_mask, concat_input_data["input_ids"], torch.zeros_like(target))
+        stu_input_embeds = stu_embed_tokens(formal_input).detach()
+        stu_target_embeds = stu_embed_tokens(formal_target).detach()
+
+        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
+        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
+        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
+
+        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1)
+        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1)
+
+        norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()
+        norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
+        norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
+
+        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float()
+        tea_k_hiddens = norm_tea_index_embeds.float()
+
+        tea_v_hiddens = distiller.projectors["t2s"](
+            norm_teacher_hiddens + norm_tea_target_embeds
+        ).float()
+        
+        align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
+        align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
+        align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
+        align = align + (1.0 - align_mask) * (-100000)
+
+        t2s_weight = torch.softmax(align, -1)        
+        t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
+        t2s_logits = t2s_hiddens.matmul(
+            distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
+        )
+        
+        return t2s_logits, target
 
 def token_weight(
     positive_model,
     negative_model,
     tokenizer,  # mistralai/Mistral-7B-v0.3
     samples,
+    config,
+    distiller,
     mode="chosen",  # rejected
     batch_size=8,
     mu=1.0,
@@ -37,7 +128,16 @@ def token_weight(
         device = next(positive_model.parameters()).device
     # Create a descriptive prefix for the progress bar
     desc = f"GPU-{process_id}" if process_id is not None else "Processing"
+
+    dataset = DistillDataset(
+        config=config,
+        split="train",  # hoặc "dev", "test"
+        student_tokenizer=...,   # instance của tokenizer student
+        teacher_tokenizers={"mistral": tokenizer}  # teacher model name map → tokenizer
+    )  
+
     collate_fn = get_collate_fn(tokenizer)
+    '''
     dataloader = DataLoader(
         samples,
         batch_size=batch_size,
@@ -46,12 +146,21 @@ def token_weight(
         num_workers=2,
         pin_memory=True,
     )
+    '''
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=dataset.collate,  # <- dùng hàm collate đã xử lý đầy đủ teacher/student
+        num_workers=2,
+        pin_memory=True,
+    )
 
     all_weights = []
 
     # input_ids = [list(chain.from_iterable(d.values())) for d in sample['tea']]
 
-    for batch in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
+    for model_data, no_model_data, gen_data in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
         # input_ids = samples[f"{mode}_teacher_input_ids"][i : i + batch_size]
         # input_ids_list = [torch.tensor(i) for i in input_ids]
         # input_ids_tensor = pad_sequence(
@@ -61,19 +170,13 @@ def token_weight(
         # attention_mask = samples[f"{mode}_teacher_attention_mask"][i : i + batch_size]
         # attention_mask_list = [torch.tensor(i) for i in attention_mask]
         # attention_mask_tensor = pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
+        logits_1 = compute_logits_target(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=positive_model)
+        logits_2 = compute_logits_target(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=negative_model)
 
-        inputs = {
-            "input_ids": batch[f"{mode}_teacher_input_ids"].to(device),
-            "attention_mask": batch[f"{mode}_teacher_attention_mask"].to(device),
-        }
-
-        with torch.no_grad():
-            logits_1 = positive_model(**inputs).logits
-            logits_2 = negative_model(**inputs).logits
         logits_1 = torch.log_softmax(logits_1, dim=-1).cpu()
         logits_2 = torch.log_softmax(logits_2, dim=-1).cpu()
 
-        labels = batch[f"{mode}_teacher_labels"]
+        labels = no_model_data[f"teacher_{mode}_label"].cpu()
 
         no_prompt_logits_1, no_prompt_labels = prompt_remove(logits_1, labels)
         no_prompt_logits_2, _ = prompt_remove(logits_2, labels)
@@ -104,10 +207,10 @@ def token_weight(
         # ]  # since each dict is a string
 
         token_logps_1 = get_token_logps(
-            no_prompt_logits_1, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
+            no_prompt_logits_1, no_prompt_labels, model_data[f"{mode}_teacher_parent_list"]
         )
         token_logps_2 = get_token_logps(
-            no_prompt_logits_2, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
+            no_prompt_logits_2, no_prompt_labels, model_data[f"{mode}_teacher_parent_list"]
         )
 
         weights = torch.clamp(token_logps_1 - token_logps_2, L, U)
