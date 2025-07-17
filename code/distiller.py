@@ -28,6 +28,7 @@ class Distiller(nn.Module):
             self.set_and_load_existing_projectors()
             log_rank(f"projector structure: {self.projectors}")
         
+        '''
         if config.teacher_to_student_token_mapping is not None:
             self.tea2stu_token_mapping = json.load(open(config.teacher_to_student_token_mapping))
             log_rank(f"Load teacher-to-student token mapping from {config.teacher_to_student_token_mapping}")
@@ -52,7 +53,7 @@ class Distiller(nn.Module):
             self.tea2stu_id_mapping = torch.LongTensor(list(self.tea2stu_id_mapping.values())).to(device)
             self.stu2tea_id_mapping_tea = torch.LongTensor(list(self.stu2tea_id_mapping.values())).to(device)
             self.stu2tea_id_mapping_stu = torch.LongTensor(list(self.stu2tea_id_mapping.keys())).to(device)
-
+        '''
     '''
     @staticmethod
     def add_distiller_args(parser):
