@@ -4,6 +4,8 @@ set -e
 #cd script
 echo "Current directory: $(pwd)"
 
+CONFIG_DIR="../config"
+
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
