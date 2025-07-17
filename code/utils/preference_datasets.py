@@ -16,7 +16,7 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import json
 import random
-from transform_config import TransformConfig
+#from transform_config import TransformConfig
 
 
 def binary_weight_transform(nums, top_percent=100):
