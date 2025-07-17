@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+cd ..
 cd ../script
 echo "Current directory: $(pwd)"
 
