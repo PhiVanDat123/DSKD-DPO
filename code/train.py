@@ -33,8 +33,6 @@ OmegaConf.register_new_resolver(
 def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
     print(f"[worker_main] config type: {type(config)}")
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
-    if 'FSDP' in config.trainer:
-        init_distributed(rank, world_size, port=config.fsdp_port)
     
     if config.debug:
         wandb.init = lambda *args, **kwargs: None
@@ -139,13 +137,7 @@ def main(config: DictConfig):
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
         print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
-        #mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
-        config_yaml_str = OmegaConf.to_yaml(config)
-        mp.spawn(
-            worker_main,
-            nprocs=world_size,
-            args=(world_size, config_yaml_str, policy, reference_model),
-        )
+        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
 
     else:
         print('starting single-process worker')
