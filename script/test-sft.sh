@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd ../code
+cd ../script
 echo "Current directory: $(pwd)"
 
 CONFIG_DIR="../config"
