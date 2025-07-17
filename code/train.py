@@ -2,7 +2,7 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 import torch.nn as nn
 import transformers
-from utils import get_local_dir, get_local_run_dir, disable_dropout, init_distributed, get_open_port, build_exp_name
+from utils.utils import get_local_dir, get_local_run_dir, disable_dropout, init_distributed, get_open_port, build_exp_name
 import os
 import hydra
 import torch.multiprocessing as mp
