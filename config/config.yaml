@@ -142,7 +142,7 @@ projector_path: None
 
 defaults:
 - _self_
-- model: null # basic model configuration
+- model: sft # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 #- transform_config: default # which transform configuration to use
 #- transform@transform: default 
