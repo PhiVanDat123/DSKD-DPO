@@ -18,6 +18,7 @@ from utils.transform_config import TransformConfig, get_transform_config
 
 os.environ["WANDB_SILENT"] = "true"
 
+wandb.login(key="c029bf5e12185949e8e5745af223f868adf63ee4")
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
 OmegaConf.register_new_resolver(
