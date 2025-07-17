@@ -353,7 +353,6 @@ class BasicTrainer(object):
             sft_mode=config.loss.name == 'sft',
             seed=seed, 
             reverse_dataset=config.reverse_dataset, 
-            base_data_dir=config.base_data_dir,
         )
         
         self.policy = policy
