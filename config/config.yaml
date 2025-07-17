@@ -146,4 +146,4 @@ defaults:
 - model: null # basic model configuration
 - loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
 #- transform: default # which transform configuration to use
-- transform@transform: default 
+#- transform@transform: default 
