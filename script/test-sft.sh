@@ -5,7 +5,7 @@ set -e
 echo "Current directory: $(pwd)"
 
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
-  --config-dir ../config \
+  --config-dir $CONFIG_DIR \
   config=config.yaml \
   model=sft \
   model.policy_name_or_path=Qwen/Qwen2.5-0.5B \
