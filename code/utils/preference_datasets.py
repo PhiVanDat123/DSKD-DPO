@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings('ignore', message='Failed to load image Python extension')
 
 from torch.utils.data import DataLoader, Dataset
-from utils import get_local_dir, TemporarilySeededRandom
+from .utils import get_local_dir, TemporarilySeededRandom
 from torch.nn.utils.rnn import pad_sequence
 from collections import defaultdict
 import tqdm
