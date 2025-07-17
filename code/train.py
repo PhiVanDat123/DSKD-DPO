@@ -14,6 +14,7 @@ import socket
 from typing import Optional, Set, List, Union
 import resource
 import sys
+import copy
 
 mp.set_start_method("fork", force=True)
 
@@ -29,8 +30,9 @@ OmegaConf.register_new_resolver(
 )
 
 
-def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
+def worker_main(rank: int, world_size: int, config_dict: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
+    config = OmegaConf.create(config_dict)
     if 'FSDP' in config.trainer:
         init_distributed(rank, world_size, port=config.fsdp_port)
     
@@ -144,7 +146,14 @@ def main(config: DictConfig):
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
         print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
-        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
+        #mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
+        config_serialized = OmegaConf.to_container(config, resolve=True)  # convert DictConfig -> dict
+        mp.spawn(
+            worker_main,
+            nprocs=world_size,
+            args=(world_size, config_serialized, policy, reference_model),
+            join=True
+        )
     else:
         print('starting single-process worker')
         worker_main(0, 1, config, policy, reference_model)
