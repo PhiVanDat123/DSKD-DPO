@@ -16,6 +16,7 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import json
 import random
+from datasets import load_dataset
 
 '''
 def binary_weight_transform(nums, top_percent=100):
@@ -73,7 +74,7 @@ weight_transform_methods = {
 }
 '''
 
-def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None, base_data_dir: str = None, reverse_dataset: bool = False):
+def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None, reverse_dataset: bool = False):
     """Load the dataset and convert it to the necessary format.
     
        The dataset is converted to a dictionary with the following structure:
@@ -150,45 +151,48 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
             # Default case with no special parameters
             return transform_func(weight_values)
         '''
+    '''
     file_path = f'{base_data_dir}/{name}/{split}.jsonl'
     print(f'Loading {name} dataset ({split} split) from {file_path}...')
     data = defaultdict(lambda: defaultdict(list))
-    
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in tqdm.tqdm(f, desc=f'Processing {name}', disable=silent):
-            example = json.loads(line)
-            prompt = example['prompt']
-            chosen = example['chosen']
-            rejected = example['rejected']
+    '''
+    raw_dataset = load_dataset(name, split=split, cache_dir=cache_dir)
+    data = defaultdict(lambda: defaultdict(list))
+    #with open(file_path, 'r', encoding='utf-8') as f:
+    for example in tqdm.tqdm(raw_dataset, desc=f"Processing {name}", disable=silent):
+        #example = json.loads(line)
+        prompt = example['prompt']
+        chosen = example['chosen']
+        rejected = example['rejected']
             
-            # Get weights
-            rejected_weight_exists = 'rejected_weight' in example
-            chosen_weight_exists = 'chosen_weight' in example
+        # Get weights
+        rejected_weight_exists = 'rejected_weight' in example
+        chosen_weight_exists = 'chosen_weight' in example
             
-            rejected_weight = example.get('rejected_weight', None)
-            chosen_weight = example.get('chosen_weight', None)
+        rejected_weight = example.get('rejected_weight', None)
+        chosen_weight = example.get('chosen_weight', None)
             
             # Swap chosen and rejected responses and weights if reverse_dataset is True
-            if reverse_dataset:
-                chosen, rejected = rejected, chosen
-                if rejected_weight_exists and chosen_weight_exists:
-                    rejected_weight, chosen_weight = chosen_weight, rejected_weight
+        if reverse_dataset:
+            chosen, rejected = rejected, chosen
+            if rejected_weight_exists and chosen_weight_exists:
+                rejected_weight, chosen_weight = chosen_weight, rejected_weight
             
-            responses = [chosen, rejected]
+        responses = [chosen, rejected]
             
-            n_responses = len(data[prompt]['responses'])
-            data[prompt]['pairs'].append((n_responses, n_responses + 1))
-            data[prompt]['responses'].extend(responses)
-            data[prompt]['sft_target'] = chosen
+        n_responses = len(data[prompt]['responses'])
+        data[prompt]['pairs'].append((n_responses, n_responses + 1))
+        data[prompt]['responses'].extend(responses)
+        data[prompt]['sft_target'] = chosen
             
             # Process weights
             #data[prompt]['rejected_weight'].append(apply_weight_transform(rejected_weight, negate=False))
-            if rejected_weight is None:
-                data[prompt]['rejected_weight'] = None
+        if rejected_weight is None:
+            data[prompt]['rejected_weight'] = None
                 
             #data[prompt]['chosen_weight'].append(apply_weight_transform(chosen_weight, negate=True))
-            if chosen_weight is None:
-                data[prompt]['chosen_weight'] = None
+        if chosen_weight is None:
+            data[prompt]['chosen_weight'] = None
                 
     return data
 
@@ -332,7 +336,6 @@ def get_batch_iterator(names: List[str],
                        n_examples: Optional[int] = None,
                        seed:int = 0,
                        silent: bool = False,
-                       base_data_dir: Optional[str] = None,
                        cache_dir: Optional[str] = None,
                        reverse_dataset: bool = False) -> Iterator[Dict]:
     """Get an iterator over batches of data. Stops after n_epochs or n_examples, whichever comes first.
@@ -366,7 +369,7 @@ def get_batch_iterator(names: List[str],
         flat_data = []
         for name in names:
             truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
-            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, base_data_dir=base_data_dir, reverse_dataset=reverse_dataset).items():
+            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, reverse_dataset=reverse_dataset).items():
                 flat_data.append((prompt, data['responses'], data['pairs'], data['sft_target'], data['rejected_weight'], data['chosen_weight'], truncation_mode))
 
     collate_fn = get_collate_fn(tokenizer)
