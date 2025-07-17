@@ -1,7 +1,34 @@
 import math
 import torch
 from .various_divergence import VariousDivergence
-from trainers import concatenated_inputs
+from typing import Dict, List, Union
+from utils.utils import pad_to_length
+
+def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
+    """Concatenate the chosen and rejected inputs into a single tensor.
+    
+    Args:
+        batch: A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids', which are tensors of shape (batch_size, sequence_length).
+        
+    Returns:
+        A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
+    """
+    max_length = max(batch['chosen_input_ids'].shape[1], batch['rejected_input_ids'].shape[1])
+    concatenated_batch = {}
+    for k in batch:
+        if k.startswith('chosen') and isinstance(batch[k], torch.Tensor):
+            pad_value = -100 if 'labels' in k else 0
+            concatenated_key = k.replace('chosen', 'concatenated')
+            concatenated_batch[concatenated_key] = pad_to_length(batch[k], max_length, pad_value=pad_value)
+    for k in batch:
+        if k.startswith('rejected') and isinstance(batch[k], torch.Tensor):
+            pad_value = -100 if 'labels' in k else 0
+            concatenated_key = k.replace('rejected', 'concatenated')
+            concatenated_batch[concatenated_key] = torch.cat((
+                concatenated_batch[concatenated_key],
+                pad_to_length(batch[k], max_length, pad_value=pad_value),
+            ), dim=0)
+    return concatenated_batch
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
