@@ -15,6 +15,8 @@ from typing import Optional, Set, List, Union
 import resource
 import sys
 
+mp.set_start_method("fork", force=True)
+
 os.environ["WANDB_SILENT"] = "true"
 
 wandb.login(key="c029bf5e12185949e8e5745af223f868adf63ee4")
