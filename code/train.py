@@ -13,7 +13,10 @@ import json
 import socket
 from typing import Optional, Set, List, Union
 import resource
+import sys
 from utils.transform_config import TransformConfig, get_transform_config
+
+os.environ["WANDB_SILENT"] = "true"
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
