@@ -1,4 +1,4 @@
-name: DSKD-DPO_train
+name: DSKD-DPO_train_v2
 
 channels:
   - pytorch
