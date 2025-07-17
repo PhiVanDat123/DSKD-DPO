@@ -30,9 +30,8 @@ OmegaConf.register_new_resolver(
 )
 
 
-def worker_main(rank: int, world_size: int, config_yaml_str: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
+def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
-    config = OmegaConf.create(config_yaml_str)
     if 'FSDP' in config.trainer:
         init_distributed(rank, world_size, port=config.fsdp_port)
     
@@ -115,15 +114,6 @@ def main(config: DictConfig):
     '''
     print(OmegaConf.to_yaml(config))
 
-    config_path = os.path.join(config.local_run_dir, 'config.yaml')
-    with open(config_path, 'w') as f:
-        OmegaConf.save(config, f)
-
-    print('=' * 80)
-    print(f'Writing to {socket.gethostname()}:{config.local_run_dir}')
-    print('=' * 80)
- 
-    os.environ['XDG_CACHE_HOME'] = get_local_dir(config.output_dir)
     print('building policy')
     model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
@@ -140,6 +130,8 @@ def main(config: DictConfig):
     else:
         reference_model = None
     
+    print(f"[main] config type: {type(config)}")
+
     if 'FSDP' in config.trainer:
         world_size = torch.cuda.device_count()
         print('starting', world_size, 'processes for FSDP training')
@@ -156,8 +148,7 @@ def main(config: DictConfig):
 
     else:
         print('starting single-process worker')
-        config_serialized = OmegaConf.to_container(config, resolve=True)
-        worker_main(0, 1, config_serialized, policy, reference_model)
+        worker_main(0, 1, config, policy, reference_model)
 
 
 if __name__ == '__main__':
