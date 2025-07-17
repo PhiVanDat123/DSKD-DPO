@@ -10,7 +10,7 @@ CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
-  transform_config=default \
+  transform=default \
   model=sft \
   model.policy_name_or_path=Qwen/Qwen2.5-0.5B \
   model.reference_name_or_path=Qwen/Qwen2.5-0.5B \
