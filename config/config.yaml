@@ -122,7 +122,7 @@ teacher_model_type: "qwen"
 model_path: "Qwen/Qwen2.5-0.5B"
 model_type: "qwen"
 model_dtype: "fp32" 
-projector_config_path: 'D:\codePython\DSKD-DPO\config\projector\projector_config.json'
+projector_config_path: '/home/hungpv/projects/DSKD-DPO/config/projector/projector_config.json'
 teacher_to_student_token_mapping: None
 teacher_to_student_id_mapping: None
 peft: None
