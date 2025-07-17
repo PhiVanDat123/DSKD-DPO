@@ -17,7 +17,11 @@ from utils.transform_config import TransformConfig, get_transform_config
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
-OmegaConf.register_new_resolver("build_exp_name", lambda loss_name, model_name, datasets, reverse_dataset, transform: build_exp_name(loss_name, model_name, datasets, reverse_dataset, transform))
+OmegaConf.register_new_resolver(
+    "build_exp_name", 
+    lambda loss_name, model_name, datasets, reverse_dataset, transform, reference_model_name: 
+        build_exp_name(loss_name, model_name, datasets, reverse_dataset, transform, reference_model_name)
+)
 
 
 def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
