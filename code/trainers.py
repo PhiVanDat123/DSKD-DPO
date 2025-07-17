@@ -898,9 +898,9 @@ class FSDPTrainer(BasicTrainer):
     def __init__(
         self,
         policy: nn.Module,
+        config: DictConfig,
         seed: int,
         run_dir: str,
-        config: DictConfig,
         reference_model: Optional[nn.Module] = None,
         rank: int = 0,
         world_size: int = 1,
