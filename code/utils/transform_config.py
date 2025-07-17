@@ -83,39 +83,21 @@ class TransformConfig:
         """Check if a parameter or section exists in the configuration."""
         return key in self.config_dict
 
-    '''
-    def get_transform_config(config) -> Union[TransformConfig, str, Dict[str, Any]]:
-        """Get a transform configuration from various input types.
-        
-        Args:
-            config: Can be:
-                - A TransformConfig object (returned as is)
-                - A string (treated as method name or preset name)
-                - A dictionary (converted to TransformConfig)
-                - None (returns default config)
-                
-        Returns:
-            A TransformConfig object, or the input if it's a string or dict.
-        """
-        return config
-    '''
 
-    def get_transform_config(config):
-        if isinstance(config, TransformConfig):
-            return config
-        elif isinstance(config, dict):
-            return TransformConfig(config_dict=config)
-        elif isinstance(config, str):
-            # Giả định config là tên method hoặc preset
-            try:
-                return TransformConfig.from_preset(config)
-            except FileNotFoundError:
-                # Nếu không có preset tương ứng, coi như là method
-                return TransformConfig(method=config)
-        elif config is None:
-            return TransformConfig()  # Mặc định method = 'origin'
-        else:
-            raise ValueError(f"Unsupported config type: {type(config)}")
+def get_transform_config(config) -> Union[TransformConfig, str, Dict[str, Any]]:
+    """Get a transform configuration from various input types.
+    
+    Args:
+        config: Can be:
+            - A TransformConfig object (returned as is)
+            - A string (treated as method name or preset name)
+            - A dictionary (converted to TransformConfig)
+            - None (returns default config)
+            
+    Returns:
+        A TransformConfig object, or the input if it's a string or dict.
+    """
+    return config
 
 
 # Example usage:
