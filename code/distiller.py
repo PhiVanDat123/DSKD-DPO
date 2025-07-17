@@ -7,12 +7,6 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM
 )
-from peft import (
-    PeftModel,
-    LoraConfig,
-    TaskType,
-    get_peft_model
-)
 from utils.utils import log_rank
 
 
@@ -186,7 +180,7 @@ class Distiller(nn.Module):
             torch_dtype=self.dtype,
             trust_remote_code=True,
         )
-
+        '''
         if self.config.peft is not None:
             if self.config.peft == "lora":
                 model.enable_input_require_grads()
@@ -223,7 +217,7 @@ class Distiller(nn.Module):
             log_rank(' > number of parameters: {:,}'.format(
                 sum([p.nelement() for p in model.parameters()])
             ))
-
+        '''
         if self.config.gradient_checkpointing:
             model.gradient_checkpointing_enable()
 
@@ -248,7 +242,7 @@ class Distiller(nn.Module):
             torch_dtype=self.dtype,
             trust_remote_code=True
         )
-
+        '''
         if self.config.peft is not None and self.config.teacher_peft_path is not None:
             if self.config.peft == "lora":
                 model = PeftModel.from_pretrained(model, self.config.teacher_peft_path)
@@ -259,6 +253,7 @@ class Distiller(nn.Module):
             log_rank(' > number of parameters of the teacher model: {:,}'.format(
                 sum([p.nelement() for p in model.parameters()])
             ))
+        '''
         for params in model.parameters():
             params.requires_grad = False
         return model, {self.config.teacher_model_type: tokenizer}
