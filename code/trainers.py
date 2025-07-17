@@ -338,7 +338,7 @@ class BasicTrainer(object):
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
         self.distiller = Distiller(config, device)
 
-        tokenizer_name_or_path = config.model.tokenizer_name_or_path or config.model.name_or_path
+        tokenizer_name_or_path = config.model.student_tokenizer_name_or_path or config.model.policy_name_or_path
         rank0_print(f'Loading tokenizer {tokenizer_name_or_path}')
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_name_or_path)
         if self.tokenizer.pad_token_id is None:
