@@ -5,7 +5,7 @@ set -e
 #cd ../script
 echo "Current directory: $(pwd)"
 
-CONFIG_DIR="../config"
+CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
 
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
