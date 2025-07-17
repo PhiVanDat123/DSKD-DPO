@@ -13,7 +13,7 @@ import json
 import socket
 from typing import Optional, Set, List, Union
 import resource
-from transform_config import TransformConfig, get_transform_config
+from utils.transform_config import TransformConfig, get_transform_config
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
