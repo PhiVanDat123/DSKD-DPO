@@ -113,10 +113,14 @@ skew_lambda: 0.7
 report_logits: false
 
 # args for distiller
-teacher_model_path: "Qwen/Qwen2.5-14B"
+#teacher_model_path: "Qwen/Qwen2.5-14B"
+#teacher_model_type: "qwen"
+#model_path: "meta-llama/Llama-3.1-8B"
+#model_type: "llama"
+teacher_model_path: "Qwen/Qwen2.5-0.5B"
 teacher_model_type: "qwen"
-model_path: "meta-llama/Llama-3.1-8B"
-model_type: "llama"
+model_path: "Qwen/Qwen2.5-0.5B"
+model_type: "qwen"
 model_dtype: "fp32" 
 projector_config_path: "config/projector/projector_config.json"
 teacher_to_student_token_mapping: None
