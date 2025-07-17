@@ -54,7 +54,7 @@ do_first_eval: true
 local_run_dir: ${get_local_run_dir:${exp_name},${output_dir}}
 
 # name for this experiment in the local run directory and on wandb
-exp_name: ${build_exp_name:${loss.name},${model.name_or_path},${datasets},${reverse_dataset},${transform}}
+exp_name: ${build_exp_name:${loss.name},${model.policy_name_or_path},${datasets},${reverse_dataset},${transform}}
 
 # the learning rate
 lr: 5e-7
