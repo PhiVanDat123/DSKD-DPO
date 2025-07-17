@@ -16,9 +16,8 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import json
 import random
-#from transform_config import TransformConfig
 
-
+'''
 def binary_weight_transform(nums, top_percent=100):
     sorted_nums = sorted(nums, reverse=True)
     
@@ -72,9 +71,9 @@ weight_transform_methods = {
     'random': random_weight_transform,
     'rank_based': rank_based_transform
 }
+'''
 
-
-def get_dataset(name: str, split: str, silent: bool = False, transform_config=None, cache_dir: str = None, base_data_dir: str = None, reverse_dataset: bool = False):
+def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = None, base_data_dir: str = None, reverse_dataset: bool = False):
     """Load the dataset and convert it to the necessary format.
     
        The dataset is converted to a dictionary with the following structure:
@@ -99,15 +98,15 @@ def get_dataset(name: str, split: str, silent: bool = False, transform_config=No
            transform_config: A structured configuration for the weight transformation.
 
     """
-    transform_method = transform_config.get('method', 'origin')
+    #transform_method = transform_config.get('method', 'origin')
     #transform = TransformConfig()
     #transform_config = transform.get_transform_config(transform_config)
     #transform_method = transform_config.method  
 
     # Get parameters for the specific method
-    if transform_method in transform_config:
-        transform_params = transform_config.get(transform_method, {})
-
+    #if transform_method in transform_config:
+    #    transform_params = transform_config.get(transform_method, {})
+    '''
     def apply_weight_transform(weight_values, negate=False):
         """Helper function to apply weight transformation with the configured parameters"""
         if weight_values is None:
@@ -150,7 +149,7 @@ def get_dataset(name: str, split: str, silent: bool = False, transform_config=No
         else:
             # Default case with no special parameters
             return transform_func(weight_values)
-
+        '''
     file_path = f'{base_data_dir}/{name}/{split}.jsonl'
     print(f'Loading {name} dataset ({split} split) from {file_path}...')
     data = defaultdict(lambda: defaultdict(list))
@@ -183,11 +182,11 @@ def get_dataset(name: str, split: str, silent: bool = False, transform_config=No
             data[prompt]['sft_target'] = chosen
             
             # Process weights
-            data[prompt]['rejected_weight'].append(apply_weight_transform(rejected_weight, negate=False))
+            #data[prompt]['rejected_weight'].append(apply_weight_transform(rejected_weight, negate=False))
             if rejected_weight is None:
                 data[prompt]['rejected_weight'] = None
                 
-            data[prompt]['chosen_weight'].append(apply_weight_transform(chosen_weight, negate=True))
+            #data[prompt]['chosen_weight'].append(apply_weight_transform(chosen_weight, negate=True))
             if chosen_weight is None:
                 data[prompt]['chosen_weight'] = None
                 
@@ -333,7 +332,6 @@ def get_batch_iterator(names: List[str],
                        n_examples: Optional[int] = None,
                        seed:int = 0,
                        silent: bool = False,
-                       transform_config=None,
                        base_data_dir: Optional[str] = None,
                        cache_dir: Optional[str] = None,
                        reverse_dataset: bool = False) -> Iterator[Dict]:
@@ -368,7 +366,7 @@ def get_batch_iterator(names: List[str],
         flat_data = []
         for name in names:
             truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
-            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, transform_config=transform_config, base_data_dir=base_data_dir, reverse_dataset=reverse_dataset).items():
+            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, base_data_dir=base_data_dir, reverse_dataset=reverse_dataset).items():
                 flat_data.append((prompt, data['responses'], data['pairs'], data['sft_target'], data['rejected_weight'], data['chosen_weight'], truncation_mode))
 
     collate_fn = get_collate_fn(tokenizer)

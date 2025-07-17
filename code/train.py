@@ -14,7 +14,6 @@ import socket
 from typing import Optional, Set, List, Union
 import resource
 import sys
-from utils.transform_config import TransformConfig, get_transform_config
 
 os.environ["WANDB_SILENT"] = "true"
 
@@ -23,8 +22,8 @@ wandb.login(key="c029bf5e12185949e8e5745af223f868adf63ee4")
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
 OmegaConf.register_new_resolver(
     "build_exp_name", 
-    lambda loss_name, model_name, datasets, reverse_dataset, transform, reference_model_name: 
-        build_exp_name(loss_name, model_name, datasets, reverse_dataset, transform, reference_model_name)
+    lambda loss_name, model_name, datasets, reverse_dataset, reference_model_name: 
+        build_exp_name(loss_name, model_name, datasets, reverse_dataset, reference_model_name)
 )
 
 
@@ -49,14 +48,12 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 
     # Convert transform configuration to a proper object if needed
     # if 'transform' in config and isinstance(config.transform, (dict, str)):
-    print(f"[DEBUG] config.transform = {config.transform_config} (type: {type(config.transform_config)})")  
-    return
-    transform_config = get_transform_config(config.transform_config)
+    #transform_config = get_transform_config(config.transform_config)
     
     TrainerClass = getattr(trainers, config.trainer)
     print(f'Creating trainer on process {rank} with world size {world_size}')
     trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model, 
-                         rank=rank, world_size=world_size, transform_config=transform_config)
+                         rank=rank, world_size=world_size)
 
     trainer.train()
     trainer.save()
@@ -65,7 +62,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 @hydra.main(version_base=None, config_path=None, config_name="config")
 def main(config: DictConfig):
     """Main entry point for training. Validates config, creates/initializes model(s), and kicks off worker process(es)."""
-
+    '''
     # Load transform configuration before resolving experiment name
     if isinstance(config.transform_config, str):
         # Check if it's a path to a configuration file
@@ -84,9 +81,9 @@ def main(config: DictConfig):
         # Using the default configuration from OmegaConf
         transform_config = config.transform_config
         print("Using transform configuration from config file")
-    
+    '''
     # Update config.transform with the full config object for experiment naming
-    config.transform_config = transform_config.to_dict() if hasattr(transform_config, 'to_dict') else transform_config
+    #config.transform_config = transform_config.to_dict() if hasattr(transform_config, 'to_dict') else transform_config
 
     # Now resolve hydra references with the updated transform config
     OmegaConf.resolve(config)
@@ -106,10 +103,12 @@ def main(config: DictConfig):
         config.fsdp_port = free_port
 
     # Print transform configuration details
+    '''
     method = transform_config.get('method', 'origin')
     print(f"Transform method: {method}")
     if method in transform_config:
         print(f"Transform parameters: {transform_config[method]}")
+    '''
     print(OmegaConf.to_yaml(config))
 
     config_path = os.path.join(config.local_run_dir, 'config.yaml')

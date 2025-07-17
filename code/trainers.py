@@ -321,7 +321,7 @@ def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict
 
 
 class BasicTrainer(object):
-    def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, transform_config = None, device: Optional[torch.device] = None):
+    def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, device: Optional[torch.device] = None):
         """A trainer for a language model, supporting either SFT or DPO training.
             
             If multiple GPUs are present, naively splits the model across them, effectively
@@ -360,13 +360,13 @@ class BasicTrainer(object):
         self.reference_model = reference_model
         
         # Use the passed transform_config if available
-        self.transform_config = transform_config
+        #self.transform_config = transform_config
 
-        print(self.transform_config)
+        #print(self.transform_config)
         
-        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0, transform_config=transform_config)
+        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0)
         rank0_print(f'Loaded train data iterator')
-        self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0, transform_config=transform_config)
+        self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0)
         self.eval_batches = list(self.eval_iterator)
         rank0_print(f'Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}')
 
@@ -903,7 +903,6 @@ class FSDPTrainer(BasicTrainer):
         run_dir: str,
         config: DictConfig,
         reference_model: Optional[nn.Module] = None,
-        transform_config=None,
         rank: int = 0,
         world_size: int = 1,
     ):
@@ -913,7 +912,6 @@ class FSDPTrainer(BasicTrainer):
             run_dir,
             config,
             reference_model,
-            transform_config,
             rank,
             world_size,
         )

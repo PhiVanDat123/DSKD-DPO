@@ -27,7 +27,6 @@ def build_exp_name(
     student_model_name: str,
     datasets: Union[str, List[str]],
     reverse_dataset: bool,
-    transform: str,
     teacher_model_name: str,
 ) -> str:
     """Build experiment name by combining loss name, model name, and dataset name(s)."""
@@ -43,10 +42,11 @@ def build_exp_name(
 
     # Process transform info
 
-    method = transform.get("method", "origin")
-    params = transform.get(method, {})
+    #method = transform.get("method", "origin")
+    #params = transform.get(method, {})
 
     # Include key parameters in name based on transform method
+    '''
     if method == "binary":
         top_percent = params.get("top_percent", 100)
         transform_str = f"{method}{top_percent}"
@@ -68,13 +68,15 @@ def build_exp_name(
         transform_str = f"{method}{min_scale}_{max_scale}"
     else:
         transform_str = method
-
+    '''
     # import ipdb; ipdb.set_trace()
     if loss_name == "tisdpo":
-        return f"{loss_name}_{student_model_short_name}_{dataset_part}_{transform_str}"
+        #return f"{loss_name}_{student_model_short_name}_{dataset_part}_{transform_str}"
+        return f"{loss_name}_{student_model_short_name}_{dataset_part}"
 
     if loss_name == "KD_tisdpo":
-        return f"{loss_name}_{student_model_short_name}_{teacher_model_short_name}_{dataset_part}_{transform_str}"
+        #return f"{loss_name}_{student_model_short_name}_{teacher_model_short_name}_{dataset_part}_{transform_str}"
+        return f"{loss_name}_{student_model_short_name}_{teacher_model_short_name}_{dataset_part}"
 
     return f"{loss_name}_{student_model_short_name}_{dataset_part}"
 
