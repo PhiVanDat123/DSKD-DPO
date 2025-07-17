@@ -16,6 +16,7 @@ import numpy as np
 from typing import Dict, List, Optional, Iterator, Callable, Union, Tuple
 import json
 import random
+from transform_config import TransformConfig
 
 
 def binary_weight_transform(nums, top_percent=100):
@@ -98,7 +99,11 @@ def get_dataset(name: str, split: str, silent: bool = False, transform_config=No
            transform_config: A structured configuration for the weight transformation.
 
     """
-    transform_method = transform_config.get('method', 'origin')
+    #transform_method = transform_config.get('method', 'origin')
+    transform = TransformConfig()
+    transform_config = transform.get_transform_config(transform_config)
+    transform_method = transform_config.method  
+
     # Get parameters for the specific method
     if transform_method in transform_config:
         transform_params = transform_config.get(transform_method, {})
