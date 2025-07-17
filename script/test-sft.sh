@@ -4,7 +4,7 @@ set -e
 #cd script
 echo "Current directory: $(pwd)"
 
-/home/hungpv/miniconda3/envs/DSKD-DPO_train/bin/python -u ../code/train.py \
+${CONDA_PREFIX}/bin/python -u ../code/train.py \
   model=sft \
   model.policy_name_or_path=Qwen/Qwen2.5-0.5B \
   model.reference_name_or_path=Qwen/Qwen2.5-0.5B \
