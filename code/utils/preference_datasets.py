@@ -74,7 +74,7 @@ weight_transform_methods = {
 }
 
 
-def get_dataset(name: str, split: str, silent: bool = False, transform=None, cache_dir: str = None, base_data_dir: str = None, reverse_dataset: bool = False):
+def get_dataset(name: str, split: str, silent: bool = False, transform_config=None, cache_dir: str = None, base_data_dir: str = None, reverse_dataset: bool = False):
     """Load the dataset and convert it to the necessary format.
     
        The dataset is converted to a dictionary with the following structure:
@@ -99,14 +99,14 @@ def get_dataset(name: str, split: str, silent: bool = False, transform=None, cac
            transform_config: A structured configuration for the weight transformation.
 
     """
-    transform_method = transform.get('method', 'origin')
+    transform_method = transform_config.get('method', 'origin')
     #transform = TransformConfig()
     #transform_config = transform.get_transform_config(transform_config)
     #transform_method = transform_config.method  
 
     # Get parameters for the specific method
-    if transform_method in transform:
-        transform_params = transform.get(transform_method, {})
+    if transform_method in transform_config:
+        transform_params = transform_config.get(transform_method, {})
 
     def apply_weight_transform(weight_values, negate=False):
         """Helper function to apply weight transformation with the configured parameters"""
