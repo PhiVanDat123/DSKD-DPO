@@ -914,6 +914,9 @@ class FSDPTrainer(BasicTrainer):
             rank,
             world_size,
         )
+
+        print(f"[trainers] config type: {type(config)}")
+        
         assert config.model.policy_block_name is not None, (
             "must specify model.policy_block_name (e.g., GPT2Block or GPTNeoXLayer) for FSDP"
         )
