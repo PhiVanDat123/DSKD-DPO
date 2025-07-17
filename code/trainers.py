@@ -904,7 +904,8 @@ class FSDPTrainer(BasicTrainer):
         reference_model: Optional[nn.Module] = None,
         rank: int = 0,
         world_size: int = 1,
-    ):
+    ):  
+        print(f"[trainers] config type: {type(config)}")
         super().__init__(
             policy,
             seed,
@@ -915,8 +916,6 @@ class FSDPTrainer(BasicTrainer):
             world_size,
         )
 
-        print(f"[trainers] config type: {type(config)}")
-        
         assert config.model.policy_block_name is not None, (
             "must specify model.policy_block_name (e.g., GPT2Block or GPTNeoXLayer) for FSDP"
         )
