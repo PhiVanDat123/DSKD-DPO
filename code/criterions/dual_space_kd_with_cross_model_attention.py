@@ -1,7 +1,7 @@
 import math
 import torch
 from .various_divergence import VariousDivergence
-from ..trainers import concatenated_inputs
+from trainers import concatenated_inputs
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
