@@ -50,7 +50,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     # Convert transform configuration to a proper object if needed
     # if 'transform' in config and isinstance(config.transform, (dict, str)):
     #print(f"[DEBUG] config.transform = {config.transform} (type: {type(config.transform)})")   
-    transform_config = get_transform_config(config.transform)
+    transform_config = get_transform_config(config.transform_config)
     
     TrainerClass = getattr(trainers, config.trainer)
     print(f'Creating trainer on process {rank} with world size {world_size}')
@@ -66,26 +66,26 @@ def main(config: DictConfig):
     """Main entry point for training. Validates config, creates/initializes model(s), and kicks off worker process(es)."""
 
     # Load transform configuration before resolving experiment name
-    if isinstance(config.transform, str):
+    if isinstance(config.transform_config, str):
         # Check if it's a path to a configuration file
-        if os.path.exists(config.transform) and config.transform.endswith('.yaml'):
-            transform_config = TransformConfig.from_file(config.transform)
-            print(f"Loaded transform configuration from {config.transform}")
+        if os.path.exists(config.transform_config) and config.transform_config.endswith('.yaml'):
+            transform_config = TransformConfig.from_file(config.transform_config)
+            print(f"Loaded transform configuration from {config.transform_config}")
         # Check if it's a preset name
-        elif os.path.exists(f"config/transform/{config.transform}.yaml"):
-            transform_config = TransformConfig.from_preset(config.transform)
-            print(f"Loaded transform configuration preset: {config.transform}")
+        elif os.path.exists(f"config/transform/{config.transform_config}.yaml"):
+            transform_config = TransformConfig.from_preset(config.transform_config)
+            print(f"Loaded transform configuration preset: {config.transform_config}")
         # Otherwise it's just a method name
         else:
-            transform_config = TransformConfig(method=config.transform)
-            print(f"Using transform method: {config.transform}")
+            transform_config = TransformConfig(method=config.transform_config)
+            print(f"Using transform method: {config.transform_config}")
     else:
         # Using the default configuration from OmegaConf
-        transform_config = config.transform
+        transform_config = config.transform_config
         print("Using transform configuration from config file")
     
     # Update config.transform with the full config object for experiment naming
-    config.transform = transform_config.to_dict() if hasattr(transform_config, 'to_dict') else transform_config
+    config.transform_config = transform_config.to_dict() if hasattr(transform_config, 'to_dict') else transform_config
 
     # Now resolve hydra references with the updated transform config
     OmegaConf.resolve(config)
