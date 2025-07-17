@@ -50,6 +50,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     # Convert transform configuration to a proper object if needed
     # if 'transform' in config and isinstance(config.transform, (dict, str)):
     print(f"[DEBUG] config.transform = {config.transform_config} (type: {type(config.transform_config)})")  
+    return
     transform_config = get_transform_config(config.transform_config)
     
     TrainerClass = getattr(trainers, config.trainer)
