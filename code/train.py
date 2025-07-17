@@ -156,7 +156,8 @@ def main(config: DictConfig):
         )
     else:
         print('starting single-process worker')
-        worker_main(0, 1, config, policy, reference_model)
+        config_serialized = OmegaConf.to_container(config, resolve=True)
+        worker_main(0, 1, config_serialized, policy, reference_model)
 
 
 if __name__ == '__main__':
