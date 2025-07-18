@@ -239,50 +239,42 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
     return collate_fn
 '''
 
-from torch.nn.utils.rnn import pad_sequence
-from typing import Callable, Dict, List, Union
-import torch
-
-from torch.nn.utils.rnn import pad_sequence
-from typing import Callable, Dict, List, Union
-import torch
-
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     def collate_fn(batch: List[Dict]) -> Dict[str, Union[List, torch.Tensor]]:
-        padded_batch = {}
-        for k in batch[0].keys():
-            values = [ex[k] for ex in batch]
+        output = {}
+        for key in batch[0].keys():
+            values = [example[key] for example in batch]
 
-            # Keys cần padding
-            if k.endswith(('_input_ids', '_attention_mask', '_labels', '_weight')):
-                if 'prompt' in k:
+            # Các key cần pad
+            if key.endswith('_input_ids') or key.endswith('_attention_mask') or key.endswith('_labels') or key.endswith('_weight'):
+                if 'prompt' in key:
+                    # Nếu là prompt, reverse trước khi pad rồi reverse lại sau khi pad
                     sequences = [torch.tensor(v[::-1], dtype=torch.long) for v in values]
                 else:
-                    dtype = torch.float if k.endswith('_weight') else torch.long
+                    dtype = torch.float if key.endswith('_weight') else torch.long
                     sequences = [torch.tensor(v, dtype=dtype) for v in values]
 
-                if k.endswith('_input_ids'):
+                if key.endswith('_input_ids'):
                     padding_value = tokenizer.pad_token_id
-                elif k.endswith('_labels'):
+                elif key.endswith('_labels'):
                     padding_value = -100
-                else:  # attention_mask hoặc _weight
-                    padding_value = 0
+                else:
+                    padding_value = 0  # attention_mask, weight
 
                 padded = pad_sequence(sequences, batch_first=True, padding_value=padding_value)
 
-                if 'prompt' in k:
-                    padded = padded.flip(dims=[1])  # Padding về bên trái
+                if 'prompt' in key:
+                    padded = padded.flip(dims=[1])  # Đảo lại về đúng chiều
 
-                padded_batch[k] = padded
+                output[key] = padded
 
             else:
                 # Không cần pad (vd: text gốc)
-                padded_batch[k] = values
+                output[key] = values
 
-        return padded_batch
+        return output
 
     return collate_fn
-
 
 
 def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int, rejected_weight=None, chosen_weight=None) -> Dict:
