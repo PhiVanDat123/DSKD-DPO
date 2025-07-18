@@ -15,6 +15,7 @@ from typing import Optional, Set, List, Union
 import resource
 import sys
 import copy
+import torch.distributed as dist
 
 mp.set_start_method("fork", force=True)
 
@@ -34,6 +35,16 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     print(f"[worker_main] config type: {type(config)}")
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
     
+    # === 🔧 Init torch.distributed for FSDP ===
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
+    dist.init_process_group(
+        backend="nccl",  # Hoặc "gloo" nếu không có GPU
+        rank=rank,
+        world_size=world_size
+    )
+
     if config.debug:
         wandb.init = lambda *args, **kwargs: None
         wandb.log = lambda *args, **kwargs: None
