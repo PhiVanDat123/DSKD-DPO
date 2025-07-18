@@ -102,7 +102,7 @@ def get_local_run_dir(exp_name: str, local_dir: str) -> str:
     os.makedirs(run_dir, exist_ok=True)
     return run_dir
 
-
+'''
 def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
     """Slice a batch into chunks, and move each chunk to the specified device."""
     #chunk_size = len(list(batch.values())[0]) // world_size
@@ -118,7 +118,40 @@ def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, dev
     sliced = {k: v[start:end] for k, v in batch.items()}
     on_device = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in sliced.items()}
     return on_device
+'''
 
+def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
+    """Slice only `model_data` and `no_model_data` from batch, and move to device."""
+    sliced = {}
+    
+    for key in ["model_data", "no_model_data"]:
+        if key not in batch:
+            continue
+
+        v = batch[key]
+        if isinstance(v, dict):
+            # slice each tensor in the nested dict
+            chunk_size = len(list(v.values())[0]) // world_size
+            start = chunk_size * rank
+            end = chunk_size * (rank + 1)
+            sliced[key] = {
+                sub_k: (sub_v[start:end].to(device) if isinstance(sub_v, torch.Tensor) else sub_v)
+                for sub_k, sub_v in v.items()
+            }
+        elif isinstance(v, torch.Tensor):
+            chunk_size = v.shape[0] // world_size
+            start = chunk_size * rank
+            end = chunk_size * (rank + 1)
+            sliced[key] = v[start:end].to(device)
+        elif isinstance(v, list):
+            chunk_size = len(v) // world_size
+            start = chunk_size * rank
+            end = chunk_size * (rank + 1)
+            sliced[key] = v[start:end]
+        else:
+            raise TypeError(f"Unsupported value type under key '{key}': {type(v)}")
+    
+    return sliced
 
 def pad_to_length(
     tensor: torch.Tensor, length: int, pad_value: Union[int, float], dim: int = -1
