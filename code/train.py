@@ -68,7 +68,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     trainer = TrainerClass(policy, config.seed, config.local_run_dir, config, reference_model=reference_model, 
                          rank=rank, world_size=world_size)
 
-    trainer.train()
+    trainer.train(config)
     trainer.save()
 
 
