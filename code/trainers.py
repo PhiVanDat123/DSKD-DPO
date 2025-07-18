@@ -340,7 +340,7 @@ class BasicTrainer(object):
 
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
-        self.distiller = Distiller(config, device)
+        self.distiller = Distiller(config)
 
         tokenizer_name_or_path = config.model.student_tokenizer_name_or_path or config.model.policy_name_or_path
         rank0_print(f'Loading tokenizer {tokenizer_name_or_path}')
