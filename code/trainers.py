@@ -410,8 +410,6 @@ class BasicTrainer(object):
             sft_mode=config.loss.name == 'sft',
             seed=seed, 
             reverse_dataset=config.reverse_dataset,
-            config=config,
-            teacher_tokenizers=self.distiller.teacher_tokenizers,
         )
         
         self.policy = policy
