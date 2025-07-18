@@ -86,8 +86,8 @@ class DistillDataset(Dataset):
         dataset = []
 
         # Load từ HuggingFace Datasets Hub
-        raw_data = load_dataset("pvdhihihi/tis-dpo-5k-output", split=self.split)
-        
+        raw_data = load_dataset("pvdhihihi/tis-dpo-5k", split=self.split)
+        raw_data = raw_data.rename_column("chosen", "output")
         '''
         self.answers = [
             x["output"] if isinstance(x["output"], list) else [x["output"]]
