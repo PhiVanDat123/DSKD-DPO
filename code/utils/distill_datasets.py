@@ -244,4 +244,9 @@ class DistillDataset(Dataset):
             for key in teacher_no_model_data[model_type]:
                 no_model_data[f"{prefix}{key}"] = teacher_no_model_data[model_type][key]
         
-        return model_data, no_model_data, gen_data
+        #return model_data, no_model_data, gen_data
+        return {
+            "model_data": model_data,
+            "no_model_data": no_model_data,
+            "gen_data": gen_data
+        }
