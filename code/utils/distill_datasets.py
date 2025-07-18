@@ -18,12 +18,12 @@ class DistillDataset(Dataset):
         config,
         split,
         student_tokenizer: Dict[str, AutoTokenizer], 
-        teacher_tokenizer: Optional[Dict[str, AutoTokenizer]] = {},
+        teacher_tokenizers: Optional[Dict[str, AutoTokenizer]] = {},
     ):  
         self.split = split
         self.config = config
         self.student_tokenizer = student_tokenizer
-        self.teacher_tokenizer = teacher_tokenizer
+        self.teacher_tokenizers = teacher_tokenizers
         self.max_length = config.max_length
         self.max_prompt_length = config.max_prompt_length
         self.dataset = self._load_and_process_data()
