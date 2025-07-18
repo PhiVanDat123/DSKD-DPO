@@ -332,7 +332,6 @@ class BasicTrainer(object):
         self.world_size = world_size
         self.config = config
         self.run_dir = run_dir
-        self.base_data_dir = config.base_data_dir
 
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
