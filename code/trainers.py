@@ -320,7 +320,7 @@ def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict
     return concatenated_batch
 
 
-class BasicTrainer():
+class BasicTrainer(nn.Module):
     def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, device: Optional[torch.device] = None):
         print(f"[crossentropy in trainers] config type: {type(config)}")
         """A trainer for a language model, supporting either SFT or DPO training.
@@ -328,6 +328,7 @@ class BasicTrainer():
             If multiple GPUs are present, naively splits the model across them, effectively
             offering N times available memory, but without any parallel computation.
         """
+        super(BasicTrainer, self).__init__()
         self.seed = seed
         self.rank = rank
         self.world_size = world_size
