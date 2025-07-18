@@ -409,7 +409,9 @@ class BasicTrainer(object):
             max_prompt_length=config.max_prompt_length,
             sft_mode=config.loss.name == 'sft',
             seed=seed, 
-            reverse_dataset=config.reverse_dataset, 
+            reverse_dataset=config.reverse_dataset,
+            config=config,
+            teacher_tokenizers=self.distiller.teacher_tokenizers,
         )
         
         self.policy = policy
