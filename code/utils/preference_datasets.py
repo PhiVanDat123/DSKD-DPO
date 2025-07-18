@@ -199,7 +199,6 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
                 
     return data
 
-'''
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     """Returns a collate function for the given tokenizer.
     
@@ -237,44 +236,7 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
 
         return padded_batch
     return collate_fn
-'''
 
-def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
-    def collate_fn(batch: List[Dict]) -> Dict[str, Union[List, torch.Tensor]]:
-        output = {}
-        for key in batch[0].keys():
-            values = [example[key] for example in batch]
-
-            # Các key cần pad
-            if key.endswith('_input_ids') or key.endswith('_attention_mask') or key.endswith('_labels') or key.endswith('_weight'):
-                if 'prompt' in key:
-                    # Nếu là prompt, reverse trước khi pad rồi reverse lại sau khi pad
-                    sequences = [torch.tensor(v[::-1], dtype=torch.long) for v in values]
-                else:
-                    dtype = torch.float if key.endswith('_weight') else torch.long
-                    sequences = [torch.tensor(v, dtype=dtype) for v in values]
-
-                if key.endswith('_input_ids'):
-                    padding_value = tokenizer.pad_token_id
-                elif key.endswith('_labels'):
-                    padding_value = -100
-                else:
-                    padding_value = 0  # attention_mask, weight
-
-                padded = pad_sequence(sequences, batch_first=True, padding_value=padding_value)
-
-                if 'prompt' in key:
-                    padded = padded.flip(dims=[1])  # Đảo lại về đúng chiều
-
-                output[key] = padded
-
-            else:
-                # Không cần pad (vd: text gốc)
-                output[key] = values
-
-        return output
-
-    return collate_fn
 
 
 def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int, rejected_weight=None, chosen_weight=None) -> Dict:
@@ -364,7 +326,7 @@ def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_m
     
     return batch
 
-'''
+
 def get_batch_iterator(names: List[str],
                        tokenizer,
                        split: str = 'train',
@@ -464,126 +426,7 @@ def get_batch_iterator(names: List[str],
             break
 
         epoch_idx += 1
-'''
 
-
-def get_batch_iterator(names: List[str],
-                       tokenizer,
-                       teacher_tokenizers,
-                       config,
-                       split: str = 'train',
-                       batch_size: int = 1,
-                       shuffle: bool = True,
-                       max_length: int = 512,
-                       max_prompt_length: int = 128,
-                       sft_mode: bool = False,
-                       n_epochs: Optional[int] = None,
-                       n_examples: Optional[int] = None,
-                       seed: int = 0,
-                       silent: bool = False,
-                       cache_dir: Optional[str] = None,
-                       reverse_dataset: bool = False) -> Iterator[Dict]:
-    assert n_epochs is not None or n_examples is not None, "Must specify either n_epochs or n_examples"
-
-    if silent:
-        datasets.logging.disable_progress_bar()
-        datasets.logging.set_verbosity_error()
-
-    distiller = Distiller(config)
-    # Initialize DistillDataset
-    distill_ds = DistillDataset(
-        config=config,
-        split=split,
-        student_tokenizer=distiller.student_tokenizer,
-        teacher_tokenizers=distiller.teacher_tokenizers,
-    )
-
-    with TemporarilySeededRandom(seed):
-        permutation_seeds = iter(np.random.randint(0, 2**32, size=1000000))
-        flat_data = []
-        for name in names:
-            truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
-            for prompt, data in get_dataset(name, split, silent=silent, cache_dir=cache_dir, reverse_dataset=reverse_dataset).items():
-                flat_data.append((prompt, data['responses'], data['pairs'], data['sft_target'], data['rejected_weight'], data['chosen_weight'], truncation_mode))
-
-    def collate_fn(batch):
-        # === Giữ lại key cũ ===
-        raw_text_keys = ['prompt', 'chosen', 'rejected', 'chosen_response_only', 'rejected_response_only']
-        tensor_keys = ['chosen_input_ids', 'chosen_attention_mask', 'chosen_labels', 'chosen_weight',
-                       'rejected_input_ids', 'rejected_attention_mask', 'rejected_labels', 'rejected_weight',
-                       'prompt_input_ids', 'prompt_attention_mask']
-
-        output = {}
-        for key in raw_text_keys:
-            output[key] = [s[key] for s in batch if key in s]
-        for key in tensor_keys:
-            if key in batch[0]:
-                output[key] = default_data_collator([{key: s[key]} for s in batch])[key]
-
-        # === DistillDataset.collate ===
-        samples = []
-        for elem in batch:
-            samp = {'student_input_ids': elem['chosen_input_ids']}
-            for model_type in teacher_tokenizers:
-                samp[f'teacher_{model_type}_input_ids'] = elem['chosen_input_ids']
-            samples.append(samp)
-
-        model_data, no_model_data, gen_data = distill_ds.collate(samples)
-
-        output.update(model_data)
-        output.update(no_model_data)
-        output.update(gen_data)
-
-        return output
-
-    # === Iterator logic ===
-    epoch_idx = 0
-    example_idx = 0
-    done = False
-    while True:
-        if n_epochs is not None and epoch_idx >= n_epochs:
-            if not silent:
-                print(f'Finished generating {n_epochs} epochs on {split} split')
-            break
-        if shuffle:
-            with TemporarilySeededRandom(next(permutation_seeds)):
-                random.shuffle(flat_data)
-
-        batch = []
-        for prompt, responses, pairs, sft_target, rejected_weight, chosen_weight, truncation_mode in flat_data:
-            if done:
-                break
-            if sft_mode:
-                batch_element = tokenize_batch_element(prompt, sft_target, sft_target, truncation_mode, tokenizer, max_length, max_prompt_length)
-                batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
-                batch.append(batch_element)
-                example_idx += 1
-                if len(batch) == batch_size:
-                    yield collate_fn(batch)
-                    if n_examples is not None and example_idx >= n_examples:
-                        if not silent:
-                            print(f'Finished generating {n_examples} examples on {split} split')
-                        done = True
-                    batch = []
-            else:
-                for index, p in enumerate(pairs):
-                    if done:
-                        break
-                    rejected_weight_item = rejected_weight[index] if rejected_weight else None
-                    chosen_weight_item = chosen_weight[index] if chosen_weight else None
-                    batch_element = tokenize_batch_element(prompt, responses[p[0]], responses[p[1]], truncation_mode, tokenizer, max_length, max_prompt_length, rejected_weight_item, chosen_weight_item)
-                    batch.append(batch_element)
-                    example_idx += 1
-                    if len(batch) == batch_size:
-                        yield collate_fn(batch)
-                        if n_examples is not None and example_idx >= n_examples:
-                            if not silent:
-                                print(f'FINISHED {n_examples} EXAMPLES on {split} split')
-                            done = True
-                        batch = []
-        if done:
-            break
-        epoch_idx += 1
 
 
 def strings_match_up_to_spaces(str_a: str, str_b: str) -> bool:

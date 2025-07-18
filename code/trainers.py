@@ -46,9 +46,9 @@ import functools
 from typing import Optional, Dict, List, Union, Tuple
 from transformers import AutoTokenizer
 
-def compute_t2s_logits(self, distiller, batch, config):
+def compute_t2s_logits(self, distiller, config):
     criterion = DualSpaceKDWithCMA(config, padding_id=-100)
-    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
+    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(distiller=distiller)
     return t2s_logits
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
@@ -485,7 +485,7 @@ class BasicTrainer(object):
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-            reference_all_logits = compute_t2s_logits(self, distiller, concatenated_batch, config)
+            reference_all_logits = compute_t2s_logits(self, distiller, config)
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False)
 
@@ -852,7 +852,7 @@ class BasicTrainer(object):
                     global_microbatch, self.rank, self.world_size, self.rank
                 )
                 
-                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
+                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(distiller=distiller)
 
                 #  Projector loss vẫn cần tính gradient
                 projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
