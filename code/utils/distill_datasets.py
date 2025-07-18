@@ -9,20 +9,21 @@ from tqdm import tqdm
 from utils import log_rank
 from typing import Dict, Optional
 from transformers import AutoTokenizer
+from datasets import load_dataset
 
 
 class DistillDataset(Dataset):
     def __init__(
         self, 
-        config, 
-        split: str,
+        config,
+        split,
         student_tokenizer: Dict[str, AutoTokenizer], 
-        teacher_tokenizers: Optional[Dict[str, AutoTokenizer]] = {},
-    ):
-        self.config = config
+        teacher_tokenizer: Optional[Dict[str, AutoTokenizer]] = {},
+    ):  
         self.split = split
+        self.config = config
         self.student_tokenizer = student_tokenizer
-        self.teacher_tokenizers = teacher_tokenizers
+        self.teacher_tokenizer = teacher_tokenizer
         self.max_length = config.max_length
         self.max_prompt_length = config.max_prompt_length
         self.dataset = self._load_and_process_data()
@@ -34,9 +35,10 @@ class DistillDataset(Dataset):
     def __getitem__(self, index):
         return self.dataset[index]
     
+    '''
     def _load_and_process_data(self):
         dataset = []
-        path = os.path.join(self.args.data_dir, f"{self.split}.jsonl")
+        path = os.path.join(self.config.data_dir, f"{self.split}.jsonl")
 
         if os.path.exists(path):
             with open(path) as f:
@@ -78,7 +80,56 @@ class DistillDataset(Dataset):
             return dataset
         else:
             raise FileNotFoundError(f"No such file named {path}")
-        
+    '''
+
+    def _load_and_process_data(self):
+        dataset = []
+
+        # Load từ HuggingFace Datasets Hub
+        raw_data = load_dataset("pvdhihihi/tis-dpo-5k", split=self.split)
+
+        self.answers = [
+            x["output"] if isinstance(x["output"], list) else [x["output"]]
+            for x in raw_data
+        ]
+
+        log_rank("Processing dataset for student model (and all teacher models)...")
+        seg = np.iinfo(np.int32).max * 2 + 1
+
+        for data in tqdm(raw_data, disable=(dist.get_rank() != 0)):
+            student_prompt_ids = self.student_tokenizer.encode(
+                data["prompt"], add_special_tokens=False
+            )[:self.max_prompt_length]
+
+            student_response_ids = self.student_tokenizer.encode(
+                data["output"], add_special_tokens=False
+            ) + [self.student_tokenizer.eos_token_id]
+
+            tokenized_data = {
+                "student_input_ids": student_prompt_ids + [seg] + student_response_ids,
+            }
+
+            for model_type in self.teacher_tokenizers:
+                tokenizer = self.teacher_tokenizers[model_type]
+                if tokenizer is None:
+                    continue
+
+                teacher_prompt_ids = tokenizer.encode(
+                    data["prompt"], add_special_tokens=False
+                )[:self.max_prompt_length]
+
+                teacher_response_ids = tokenizer.encode(
+                    data["output"], add_special_tokens=False
+                ) + [tokenizer.eos_token_id]
+
+                tokenized_data[f"teacher_{model_type}_input_ids"] = \
+                    teacher_prompt_ids + [seg] + teacher_response_ids
+
+            dataset.append(tokenized_data)
+
+        return dataset
+
+
     def _process_lm(
         self, i, samp, model_data, no_model_data, gen_data, 
         teacher_model_data, teacher_no_model_data
@@ -94,7 +145,7 @@ class DistillDataset(Dataset):
         input_len = len(input_ids)
         model_data["input_ids"][i][:input_len-1] = torch.tensor(input_ids[:-1], dtype=torch.long)
         model_data["attention_mask"][i][:input_len-1] = 1.0
-        if self.args.model_type in ["gpt2"]:
+        if self.config.model_type in ["gpt2"]:
             model_data["position_ids"][i][:input_len-1] = torch.arange(0, input_len-1, dtype=torch.long)
         no_model_data["label"][i][:input_len-1] = torch.tensor(input_ids[1:], dtype=torch.long)
         no_model_data["label"][i][:source_len-1] = -100
@@ -143,7 +194,7 @@ class DistillDataset(Dataset):
             "attention_mask": torch.zeros(bs, max_length),
         }
         
-        if self.args.model_type in ["gpt2"]:
+        if self.config.model_type in ["gpt2"]:
             model_data["position_ids"] = torch.zeros(bs, max_length, dtype=torch.long)
             
         no_model_data = {
