@@ -850,6 +850,7 @@ class BasicTrainer(object):
                     global_microbatch, self.rank, self.world_size, self.rank
                 )
 
+                print(f"[DEBUG] batch keys: {list(batch.keys())}")
                 t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
 
                 #  Projector loss vẫn cần tính gradient
