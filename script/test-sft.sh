@@ -19,7 +19,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   loss=sft \
   eval_every=5 \
   policy_mode=student \
-  datasets=pvdhihihi/tis-dpo-5k \
+  datasets=tonyshelby/ultra-feedback_checking \
   gradient_accumulation_steps=2 batch_size=4 eval_batch_size=4 \
   trainer=FSDPTrainer sample_during_eval=false \
   debug=false \
