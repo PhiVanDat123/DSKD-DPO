@@ -5,7 +5,6 @@ import torch.distributed as dist
 
 class CrossEntropyLoss(nn.Module):
     def __init__(self, config, padding_id=-100) -> None:
-        print(f"[cross_entropy_loss] config type: {type(config)}")
         super(CrossEntropyLoss, self).__init__()
         self.label_smoothing = config.label_smoothing
         self.padding_id = padding_id
