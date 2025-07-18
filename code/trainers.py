@@ -322,6 +322,7 @@ def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict
 
 class BasicTrainer(object):
     def __init__(self, policy: nn.Module, config: DictConfig, seed: int, run_dir: str, reference_model: Optional[nn.Module] = None, rank: int = 0, world_size: int = 1, device: Optional[torch.device] = None):
+        print(f"[crossentropy in trainers] config type: {type(config)}")
         """A trainer for a language model, supporting either SFT or DPO training.
             
             If multiple GPUs are present, naively splits the model across them, effectively
@@ -333,7 +334,6 @@ class BasicTrainer(object):
         self.config = config
         self.run_dir = run_dir
 
-        print(f"[crossentropy in trainers] config type: {type(config)}")
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
         self.distiller = Distiller(config, device)
