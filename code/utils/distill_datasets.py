@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import torch.distributed as dist
 from tqdm import tqdm
 
-from utils import log_rank
+from .utils import log_rank
 from typing import Dict, Optional
 from transformers import AutoTokenizer
 from datasets import load_dataset
