@@ -86,7 +86,7 @@ class DistillDataset(Dataset):
         dataset = []
 
         # Load từ HuggingFace Datasets Hub
-        raw_data = load_dataset("pvdhihihi/tis-dpo-5k", split=self.split)
+        raw_data = load_dataset("pvdhihihi/tis-dpo-5k-output", split=self.split)
         
         '''
         self.answers = [
