@@ -87,12 +87,13 @@ class DistillDataset(Dataset):
 
         # Load từ HuggingFace Datasets Hub
         raw_data = load_dataset("pvdhihihi/tis-dpo-5k", split=self.split)
-
+        
+        '''
         self.answers = [
             x["output"] if isinstance(x["output"], list) else [x["output"]]
             for x in raw_data
         ]
-
+        '''
         log_rank("Processing dataset for student model (and all teacher models)...")
         seg = np.iinfo(np.int32).max * 2 + 1
 
