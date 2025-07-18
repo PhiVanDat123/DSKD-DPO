@@ -19,6 +19,7 @@ import random
 from datasets import load_dataset
 from .distill_datasets import DistillDataset
 from transformers import default_data_collator
+from distiller import Distiller
 
 '''
 def binary_weight_transform(nums, top_percent=100):
@@ -450,12 +451,13 @@ def get_batch_iterator(names: List[str],
         datasets.logging.disable_progress_bar()
         datasets.logging.set_verbosity_error()
 
+    distiller = Distiller(config)
     # Initialize DistillDataset
     distill_ds = DistillDataset(
         config=config,
         split=split,
-        tokenizer_map={'student': tokenizer},
-        teacher_tokenizer_map=teacher_tokenizers,
+        student_tokenizer=distiller.student_tokenizer,
+        teacher_tokenizers=distiller.teacher_tokenizers,
     )
 
     with TemporarilySeededRandom(seed):
