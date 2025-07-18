@@ -45,8 +45,6 @@ import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
 from transformers import AutoTokenizer
-from utils.distill_datasets import DistillDataset
-from torch.utils.data import DataLoader
 
 def compute_t2s_logits(self, distiller, batch, config):
     criterion = DualSpaceKDWithCMA(config, padding_id=-100)
@@ -422,36 +420,9 @@ class BasicTrainer(object):
 
         #print(self.transform_config)
         
-        #self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0)
-        self.train_dataset = DistillDataset(
-            config=config,
-            split="train",
-            student_tokenizer=self.distiller.student_tokenizer,
-            teacher_tokenizers=self.distiller.teacher_tokenizers
-        )
-        self.train_iterator = DataLoader(
-            self.train_dataset,
-            batch_size=config.batch_size,
-            shuffle=True,
-            collate_fn=self.train_dataset.collate,
-            drop_last=True
-        )
+        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0)
         rank0_print(f'Loaded train data iterator')
-        #self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0)
-        #self.eval_batches = list(self.eval_iterator)
-        self.eval_dataset = DistillDataset(
-            config=config,
-            split="test",
-            student_tokenizer=self.distiller.student_tokenizer,
-            teacher_tokenizers=self.distiller.teacher_tokenizers
-        )
-        self.eval_iterator = DataLoader(
-            self.eval_dataset,
-            batch_size=config.batch_size,
-            shuffle=True,
-            collate_fn=self.eval_dataset.collate,
-            drop_last=True
-        )
+        self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0)
         self.eval_batches = list(self.eval_iterator)
         rank0_print(f'Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}')
 
@@ -810,8 +781,6 @@ class BasicTrainer(object):
         last_log = None
 
         for batch in self.train_iterator:
-            model_data, no_model_data, gen_data = batch
-
             #### BEGIN EVALUATION ####
             if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
                 rank0_print(f'Running evaluation after {self.example_counter} train examples')
@@ -880,9 +849,8 @@ class BasicTrainer(object):
                 local_microbatch = slice_and_move_batch_for_device(
                     global_microbatch, self.rank, self.world_size, self.rank
                 )
-
-                print(f"[DEBUG] batch keys: {list(batch.keys())}")
-                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(input_data=model_data, output_data=no_model_data, distiller=distiller)
+                
+                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(input_data=batch["input_batch"], output_data = batch["output_batch"], distiller=distiller)
 
                 #  Projector loss vẫn cần tính gradient
                 projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)

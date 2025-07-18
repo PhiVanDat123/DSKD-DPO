@@ -86,7 +86,7 @@ class DistillDataset(Dataset):
         dataset = []
 
         # Load từ HuggingFace Datasets Hub
-        raw_data = load_dataset("pvdhihihi/tis-dpo-5k", split=self.split)
+        raw_data = load_dataset("pvdhihihi/tis-dpo-5k-output", split=self.split)
         raw_data = raw_data.rename_column("chosen", "output")
         '''
         self.answers = [
@@ -244,9 +244,4 @@ class DistillDataset(Dataset):
             for key in teacher_no_model_data[model_type]:
                 no_model_data[f"{prefix}{key}"] = teacher_no_model_data[model_type][key]
         
-        #return model_data, no_model_data, gen_data
-        return {
-            "model_data": model_data,
-            "no_model_data": no_model_data,
-            "gen_data": gen_data
-        }
+        return model_data, no_model_data, gen_data
