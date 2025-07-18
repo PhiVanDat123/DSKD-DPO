@@ -331,6 +331,7 @@ class BasicTrainer(object):
         rank: int = 0,
         world_size: int = 1,
     ):
+        print(f"[Basictrainers] config type: {type(config)}")
         self.seed = seed
         self.rank = rank
         self.world_size = world_size
@@ -908,7 +909,7 @@ class FSDPTrainer(BasicTrainer):
         rank: int = 0,
         world_size: int = 1,
     ):  
-        print(f"[trainers] config type: {type(config)}")
+        print(f"[FSDPtrainers] config type: {type(config)}")
         super().__init__(
             policy,
             seed,
