@@ -243,45 +243,46 @@ from torch.nn.utils.rnn import pad_sequence
 from typing import Callable, Dict, List, Union
 import torch
 
+from torch.nn.utils.rnn import pad_sequence
+from typing import Callable, Dict, List, Union
+import torch
+
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     def collate_fn(batch: List[Dict]) -> Dict[str, Union[List, torch.Tensor]]:
         padded_batch = {}
         for k in batch[0].keys():
-            try:
-                if k.endswith(('_input_ids', '_attention_mask', '_labels', '_weight')):
-                    # Dữ liệu dạng tensor
-                    if 'prompt' in k:
-                        to_pad = [torch.tensor(ex[k][::-1]) for ex in batch]
-                    else:
-                        to_pad = [torch.tensor(ex[k], dtype=torch.float if k.endswith('_weight') else torch.long)
-                                  for ex in batch]
+            values = [ex[k] for ex in batch]
 
-                    if k.endswith('_input_ids'):
-                        padding_value = tokenizer.pad_token_id
-                    elif k.endswith('_labels'):
-                        padding_value = -100
-                    elif k.endswith('_attention_mask') or k.endswith('_weight'):
-                        padding_value = 0
-                    else:
-                        raise ValueError(f"Unexpected key in batch: {k}")
-
-                    padded = pad_sequence(to_pad, batch_first=True, padding_value=padding_value)
-                    if 'prompt' in k:
-                        padded = padded.flip(dims=[1])  # Flip lại sau khi đảo
-
-                    padded_batch[k] = padded
-
+            # Keys cần padding
+            if k.endswith(('_input_ids', '_attention_mask', '_labels', '_weight')):
+                if 'prompt' in k:
+                    sequences = [torch.tensor(v[::-1], dtype=torch.long) for v in values]
                 else:
-                    # Dữ liệu dạng string (prompt, chosen, rejected, v.v.)
-                    padded_batch[k] = [ex[k] for ex in batch]
+                    dtype = torch.float if k.endswith('_weight') else torch.long
+                    sequences = [torch.tensor(v, dtype=dtype) for v in values]
 
-            except Exception as e:
-                print(f"[Collate Error] Key = {k} caused error: {e}")
-                raise
+                if k.endswith('_input_ids'):
+                    padding_value = tokenizer.pad_token_id
+                elif k.endswith('_labels'):
+                    padding_value = -100
+                else:  # attention_mask hoặc _weight
+                    padding_value = 0
+
+                padded = pad_sequence(sequences, batch_first=True, padding_value=padding_value)
+
+                if 'prompt' in k:
+                    padded = padded.flip(dims=[1])  # Padding về bên trái
+
+                padded_batch[k] = padded
+
+            else:
+                # Không cần pad (vd: text gốc)
+                padded_batch[k] = values
 
         return padded_batch
 
     return collate_fn
+
 
 
 def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int, rejected_weight=None, chosen_weight=None) -> Dict:
