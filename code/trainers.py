@@ -333,6 +333,7 @@ class BasicTrainer(object):
         self.config = config
         self.run_dir = run_dir
 
+        print(f"[crossentropy in trainers] config type: {type(config)}")
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
         self.distiller = Distiller(config, device)
