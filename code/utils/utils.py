@@ -105,7 +105,13 @@ def get_local_run_dir(exp_name: str, local_dir: str) -> str:
 
 def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
     """Slice a batch into chunks, and move each chunk to the specified device."""
-    chunk_size = len(list(batch.values())[0]) // world_size
+    #chunk_size = len(list(batch.values())[0]) // world_size
+    if isinstance(batch, dict):
+        chunk_size = len(list(batch.values())[0]) // world_size
+    elif isinstance(batch, tuple):
+        chunk_size = len(batch[0]) // world_size
+    else:
+        raise TypeError(f"Unsupported batch type: {type(batch)}")
     start = chunk_size * rank
     end = chunk_size * (rank + 1)
     sliced = {k: v[start:end] for k, v in batch.items()}
