@@ -25,6 +25,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
     Returns:
         A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
     """
+    '''
     max_length = max(
         batch[f"chosen_{mode}_input_ids"].shape[1], batch[f"rejected_{mode}_input_ids"].shape[1]
     )
@@ -34,6 +35,17 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
     max_span = max(
         batch[f"chosen_{mode}_parent_list"].shape[2], batch[f"rejected_{mode}_parent_list"].shape[2]
     )
+    '''
+
+    chosen_input_ids = torch.tensor(batch[f"chosen_{mode}_input_ids"])
+    rejected_input_ids = torch.tensor(batch[f"rejected_{mode}_input_ids"])
+    chosen_parent_list = torch.tensor(batch[f"chosen_{mode}_parent_list"])
+    rejected_parent_list = torch.tensor(batch[f"rejected_{mode}_parent_list"])
+
+    max_length = max(chosen_input_ids.shape[1], rejected_input_ids.shape[1])
+    max_num_parents = max(chosen_parent_list.shape[1], rejected_parent_list.shape[1])
+    max_span = max(chosen_parent_list.shape[2], rejected_parent_list.shape[2])
+
     concatenated_batch = {}
     keys = [k for k in batch if mode in k]
     keys.extend([k for k in batch if "weight" in k])
