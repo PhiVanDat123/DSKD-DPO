@@ -8,6 +8,7 @@ CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
+  model=dpo \
   model.policy_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
   model.reference_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
   model.teacher_tokenizer_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
