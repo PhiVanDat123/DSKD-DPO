@@ -444,3 +444,200 @@ def strings_match_up_to_spaces(str_a: str, str_b: str) -> bool:
                     str_b = str_b[:idx] + str_b[idx + 1:]
 
     return True
+
+class CustomCollate:
+    def __init__(self, tokenizer: Dict):
+        self.tokenizer = tokenizer
+
+    def __call__(self, batch):
+        # first, pad everything to the same length
+        padded_batch = {}
+        batch_dict = {k: [d[k] for d in batch] for k in batch[0]}
+        for k in batch[0].keys():
+            if (
+                k.endswith("_input_ids")
+                or k.endswith("_attention_mask")
+                or k.endswith("_labels")
+                or k.endswith("_weight")
+            ):
+                if "prompt" in k:  # adapted from https://stackoverflow.com/questions/73256206
+                    to_pad = [torch.LongTensor(ex[k][::-1]) for ex in batch]
+                else:
+                    if k.endswith("_weight"):
+                        to_pad = [torch.FloatTensor(ex[k]) for ex in batch]
+                    else:
+                        to_pad = [torch.LongTensor(ex[k]) for ex in batch]
+                if k.endswith("_input_ids"):
+                    if "teacher" in k:
+                        padding_value = self.tokenizer["teacher"].eos_token_id
+                    else:
+                        padding_value = self.tokenizer["student"].eos_token_id
+                elif k.endswith("_labels"):
+                    padding_value = -100
+                elif k.endswith("_attention_mask") or k.endswith("_weight"):
+                    padding_value = 0
+                else:
+                    raise ValueError(f"Unexpected key in batch '{k}'")
+
+                padded_batch[k] = pad_sequence(
+                    to_pad, batch_first=True, padding_value=padding_value
+                )
+                if "prompt" in k:  # for the prompt, flip back so padding is on left side
+                    padded_batch[k] = padded_batch[k].flip(dims=[1])
+            elif k.endswith("_parent_list"):
+                padding_value = -1
+                batch_size = len(batch_dict[k])
+                max_outer = max(len(sample) for sample in batch_dict[k])
+                max_inner = max(len(sublist) for sample in batch_dict[k] for sublist in sample)
+                # Preallocate big padded tensor
+                result = torch.full(
+                    (batch_size, max_outer, max_inner), padding_value, dtype=torch.long
+                )
+
+                for i, sample in enumerate(batch_dict[k]):
+                    for j, sublist in enumerate(sample):
+                        length = len(sublist)
+                        if length > 0:
+                            result[i, j, :length] = torch.LongTensor(sublist)
+                # new_key = k.replace('list', 'tensor')
+                # padded_batch[new_key] = result
+                padded_batch[k] = result
+            else:
+                padded_batch[k] = [ex[k] for ex in batch]
+
+        # import ipdb; ipdb.set_trace()
+
+        return padded_batch
+
+
+class PrefData(Dataset):
+    def __init__(
+        self,
+        data_path: str,
+        sft_mode: bool,
+        train_test_split: str,
+        transform_config=None,
+        reverse_dataset: bool = False,
+    ):
+        self.data = datasets.load_dataset(data_path, split=train_test_split)
+        self.sft_mode = sft_mode
+        self.reverse_dataset = reverse_dataset
+        self.transform_config = transform_config
+        self.transform_method = self.transform_config.get("method", "origin")
+        # if self.transform_method in self.transform_config:
+        self.transform_params = transform_config.get(self.transform_method, {})
+
+    def __len__(self):
+        return len(self.data)
+
+    def safe_swap_chosen_rejected(self, d):
+        temp = {}
+        for k, v in d.items():
+            if "teacher" in k or "student" in k:
+                if "chosen" in k:
+                    new_k = (
+                        k.replace("chosen", "temp")
+                        .replace("rejected", "chosen")
+                        .replace("temp", "rejected")
+                    )
+                elif "rejected" in k:
+                    new_k = (
+                        k.replace("rejected", "temp")
+                        .replace("chosen", "rejected")
+                        .replace("temp", "chosen")
+                    )
+                else:
+                    new_k = k
+            else:
+                new_k = k
+            temp[new_k] = v
+        d.clear()
+        d.update(temp)
+
+    def apply_weight_transform(
+        self, weight_values, transform_method, transform_params, negate=False
+    ):
+        """Helper function to apply weight transformation with the configured parameters"""
+        if weight_values is None:
+            return None
+
+        # Apply negation if needed (for chosen weights)
+        if negate:
+            weight_values = [-x for x in weight_values]
+
+        '''
+        # Apply the transform method with parameters
+        transform_func = weight_transform_methods[transform_method]
+        if transform_method == "binary" and "top_percent" in transform_params:
+            return transform_func(weight_values, top_percent=transform_params["top_percent"])
+        elif transform_method == "threshold" and (
+            "upper_threshold" in transform_params or "lower_threshold" in transform_params
+        ):
+            return transform_func(
+                weight_values,
+                upper_threshold=transform_params.get("upper_threshold", 1),
+                lower_threshold=transform_params.get("lower_threshold", -1),
+            )
+        elif transform_method == "threshold_and_scale" and any(
+            param in transform_params for param in ["min_val", "max_val", "min_scale", "max_scale"]
+        ):
+            return transform_func(
+                weight_values,
+                min_val=transform_params.get("min_val", -1.5),
+                max_val=transform_params.get("max_val", 1.5),
+                min_scale=transform_params.get("min_scale", 0.7),
+                max_scale=transform_params.get("max_scale", 1.3),
+            )
+        elif transform_method == "random" and (
+            "min_val" in transform_params or "max_val" in transform_params
+        ):
+            return transform_func(
+                weight_values,
+                min_val=transform_params.get("min_val", 0.7),
+                max_val=transform_params.get("max_val", 1.3),
+            )
+        elif transform_method == "rank_based" and (
+            "min_scale" in transform_params or "max_scale" in transform_params
+        ):
+            return transform_func(
+                weight_values,
+                min_scale=transform_params.get("min_scale", 0.7),
+                max_scale=transform_params.get("max_scale", 1.3),
+            )
+        else:
+            # Default case with no special parameters
+            return transform_func(weight_values)
+        '''
+
+    def __getitem__(self, idx):
+        for k in self.data[idx].keys():
+            if "parent_dict" in k:
+                self.data[idx][k] = json.loads(self.data[idx][k])
+
+        self.data[idx]["rejected_weight"] = self.data[idx].get("rejected_weight", None)
+        self.data[idx]["chosen_weight"] = self.data[idx].get("chosen_weight", None)
+
+        if self.transform_method:
+            self.data[idx]["chosen_weight"] = self.apply_weight_transform(
+                self.data[idx]["chosen_weight"],
+                self.transform_method,
+                self.transform_params,
+                negate=False,
+            )
+            self.data[idx]["rejected_weight"] = self.apply_weight_transform(
+                self.data[idx]["rejected_weight"], self.transform_method, self.transform_params
+            )
+        if self.reverse_dataset:
+            self.safe_swap_chosen_rejected(self.data[idx])
+            self.data[idx]["chosen"], self.data[idx]["rejected"] = (
+                self.data[idx]["rejected"],
+                self.data[idx]["chosen"],
+            )
+            self.data[idx]["chosen_weight"], self.data[idx]["rejected_weight"] = (
+                self.data[idx]["rejected_weight"],
+                self.data[idx]["chosen_weight"],
+            )
+        if self.sft_mode:
+            batch_element = {k: v for k, v in self.data[idx].items() if "rejected" not in k}
+            return batch_element
+        return self.data[idx]

@@ -19,7 +19,7 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
 
-from utils.preference_datasets import get_batch_iterator
+from utils.preference_datasets import get_batch_iterator, CustomCollate, PrefData
 from utils.utils import (
     slice_and_move_batch_for_device,
     formatted_dict,
@@ -45,6 +45,7 @@ import json
 import functools
 from typing import Optional, Dict, List, Union, Tuple
 from transformers import AutoTokenizer
+from torch.utils.data import DataLoader
 
 def compute_t2s_logits(self, distiller, config):
     criterion = DualSpaceKDWithCMA(config, padding_id=-100)
@@ -384,47 +385,118 @@ class BasicTrainer(object):
         rank: int = 0,
         world_size: int = 1,
     ):
-        print(f"[Basictrainers] config type: {type(config)}")
         self.seed = seed
         self.rank = rank
         self.world_size = world_size
         self.config = config
         self.run_dir = run_dir
 
-        self.loss = CrossEntropyLoss(config, padding_id=-100)
-        self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
-        self.distiller = Distiller(config)
-
-        tokenizer_name_or_path = config.model.student_tokenizer_name_or_path or config.model.policy_name_or_path
-        rank0_print(f'Loading tokenizer {tokenizer_name_or_path}')
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_name_or_path)
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-        
-        data_iterator_kwargs = dict(
-            names=[config.datasets],
-            tokenizer=self.tokenizer,
-            shuffle=True,
-            max_length=config.max_length,
-            max_prompt_length=config.max_prompt_length,
-            sft_mode=config.loss.name == 'sft',
-            seed=seed, 
-            reverse_dataset=config.reverse_dataset,
+        teacher_tokenizer_name_or_path = (
+            config.model.teacher_tokenizer_name_or_path or config.model.teacher_name_or_path
         )
-        
+        rank0_print(f"Loading teacher tokenizer {teacher_tokenizer_name_or_path}")
+        self.teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_tokenizer_name_or_path)
+        student_tokenizer_name_or_path = (
+            config.model.student_tokenizer_name_or_path or config.model.student_name_or_path
+        )
+        rank0_print(f"Loading student tokenizer {student_tokenizer_name_or_path}")
+        self.student_tokenizer = AutoTokenizer.from_pretrained(student_tokenizer_name_or_path)
+        if self.teacher_tokenizer.pad_token_id is None:
+            self.teacher_tokenizer.pad_token_id = self.teacher_tokenizer.eos_token_id
+            # self.teacher_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        if self.student_tokenizer.pad_token_id is None:
+            self.student_tokenizer.pad_token_id = self.student_tokenizer.eos_token_id
+            # self.student_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+
+        self.tokenizer = {
+            "teacher": self.teacher_tokenizer,
+            "student": self.student_tokenizer,
+        }
+
+        # data_iterator_kwargs = dict(
+        #     # names=config.datasets,
+        #     tokenizer=self.tokenizer,
+        #     shuffle=True,
+        #     max_length=config.max_length,
+        #     max_prompt_length=config.max_prompt_length,
+        #     sft_mode=config.loss.name == "sft",
+        #     seed=seed,
+        #     reverse_dataset=config.reverse_dataset,
+        #     base_data_dir=config.base_data_dir,
+        # )
+
         self.policy = policy
         self.reference_model = reference_model
-        
-        # Use the passed transform_config if available
-        #self.transform_config = transform_config
 
-        #print(self.transform_config)
-        
-        self.train_iterator = get_batch_iterator(**data_iterator_kwargs, split='train', n_epochs=config.n_epochs, n_examples=config.n_examples, batch_size=config.batch_size, silent=rank != 0)
-        rank0_print(f'Loaded train data iterator')
-        self.eval_iterator = get_batch_iterator(**data_iterator_kwargs, split='test', n_examples=config.n_eval_examples, batch_size=config.eval_batch_size, silent=rank != 0)
+        print(self.transform_config)
+
+        if self.config.loss.name == "tisdpo_KDAlign":
+            self.distiller = Distiller(
+                student_model=self.policy,
+                teacher_model=self.reference_model,
+                student_tokenizer=self.tokenizer["student"],
+                teacher_tokenizer=self.tokenizer["teacher"],
+                config=self.config,
+            )
+            self.criterion = DualSpaceKDWithCMA(args=self.config.loss)
+
+        self.train_dataset = PrefData(
+            data_path=config.datasets,
+            train_test_split="train",
+            sft_mode=(config.loss.name == "sft"),
+            reverse_dataset=config.reverse_dataset,
+            transform_config=self.transform_config,
+        )
+        self.eval_dataset = PrefData(
+            data_path=config.datasets,
+            train_test_split="test",
+            sft_mode=(config.loss.name == "sft"),
+            reverse_dataset=config.reverse_dataset,
+            transform_config=self.transform_config,
+        )
+
+        self.train_iterator = DataLoader(
+            self.train_dataset,
+            batch_size=config.batch_size,
+            shuffle=True,
+            # collate_fn=get_collate_fn(self.tokenizer),
+            collate_fn=CustomCollate(self.tokenizer),
+            pin_memory=True,
+            num_workers=2,
+            drop_last=True,
+        )
+        rank0_print("Loaded train data iterator")
+        # self.train_iterator = get_batch_iterator(
+        #     **data_iterator_kwargs,
+        #     split="train",
+        #     n_epochs=config.n_epochs,
+        #     n_examples=config.n_examples,
+        #     batch_size=config.batch_size,
+        #     silent=rank != 0,
+        #     transform_config=transform_config,
+        # )
+        self.eval_iterator = DataLoader(
+            self.eval_dataset,
+            batch_size=config.eval_batch_size,
+            shuffle=True,
+            # collate_fn=get_collate_fn(self.tokenizer),
+            collate_fn=CustomCollate(self.tokenizer),
+            pin_memory=True,
+            num_workers=2,
+            drop_last=True,
+        )
+        # self.eval_iterator = get_batch_iterator(
+        #     **data_iterator_kwargs,
+        #     split="test",
+        #     n_examples=config.n_eval_examples,
+        #     batch_size=config.eval_batch_size,
+        #     silent=rank != 0,
+        #     transform_config=transform_config,
+        # )
         self.eval_batches = list(self.eval_iterator)
-        rank0_print(f'Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}')
+        rank0_print(
+            f"Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}"
+        )
 
     def get_batch_samples(self, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
         """Generate samples from the policy (and reference model, if doing DPO training) for the given batch of inputs."""
