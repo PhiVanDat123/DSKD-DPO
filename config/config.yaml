@@ -142,6 +142,9 @@ projector_path: None
 
 projector_warmup_steps: 1000
 
+policy_mode: "student"
+reference_mode: "teacher"
+
 defaults:
 - _self_
 - model: sft # basic model configuration

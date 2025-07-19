@@ -48,9 +48,9 @@ from typing import Optional, Dict, List, Union, Tuple
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
-def compute_t2s_logits(self, distiller, config):
+def compute_t2s_logits(self, distiller, config, concat_student_data, concat_teacher_data):
     criterion = DualSpaceKDWithCMA(config, padding_id=-100)
-    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(distiller=distiller)
+    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(concat_student_data, concat_teacher_data, distiller=distiller)
     return t2s_logits
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
@@ -539,13 +539,13 @@ class BasicTrainer(object):
 
         return policy_output_decoded, reference_output_decoded
     
-    def concatenated_forward(self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+    def concatenated_forward(self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]], mode) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
         
            We do this to avoid doing two forward passes, because it's faster for FSDP.
         """
 
-        concatenated_batch = concatenated_inputs(batch)
+        concatenated_batch = concatenated_inputs(batch, mode)
         # dict_keys(['concatenated_weight', 'concatenated_input_ids', 'concatenated_attention_mask', 'concatenated_labels'])
         all_logits = model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
         all_logps = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False, token_level=self.config.loss.token_level)
@@ -554,23 +554,24 @@ class BasicTrainer(object):
         return chosen_logps, rejected_logps
     
     def tisdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
-                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller, config):
+                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller, config, mode):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
            We do this to avoid doing two forward passes, because it's faster for FSDP.
         """
-        concatenated_batch = concatenated_inputs(batch)
-        all_logits = model(concatenated_batch['concatenated_input_ids'],
-                           attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
-        
+        concatenated_batch = concatenated_inputs(batch, mode)
+        all_logits = model(concatenated_batch[f'concatenated_{mode}_input_ids'],
+                           attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits.to(torch.float32)
+        teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
+
         with torch.no_grad():
             #reference_all_logits = reference_model(concatenated_batch['concatenated_input_ids'],
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-            reference_all_logits = compute_t2s_logits(self, distiller, config)
+            reference_all_logits = compute_t2s_logits(self, distiller, config, concatenated_batch, teacher_concatenated_batch)
 
-        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False)
+        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_{mode}_weight'], average_log_prob=False)
 
         chosen_logps_margin = all_logps_margin[:batch['chosen_input_ids'].shape[0]]
         rejected_logps_margin = all_logps_margin[batch['chosen_input_ids'].shape[0]:]
@@ -584,12 +585,12 @@ class BasicTrainer(object):
             chosen_logps, rejected_logps
     
     def tdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
-                                  batch: Dict[str, Union[List, torch.LongTensor]]):
+                                  batch: Dict[str, Union[List, torch.LongTensor]], mode):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
            We do this to avoid doing two forward passes, because it's faster for FSDP.
         """
-        concatenated_batch = concatenated_inputs(batch)
+        concatenated_batch = concatenated_inputs(batch, mode)
         all_logits = model(concatenated_batch['concatenated_input_ids'],
                            attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
         
@@ -618,9 +619,9 @@ class BasicTrainer(object):
         train_test = 'train' if train else 'eval'
 
         if loss_config.name in {'dpo', 'ipo'}:
-            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch)
+            policy_chosen_logps, policy_rejected_logps = self.concatenated_forward(self.policy, batch, self.config.policy_mode)
             with torch.no_grad():
-                reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch)
+                reference_chosen_logps, reference_rejected_logps = self.concatenated_forward(self.reference_model, batch, self.config.reference_mode)
 
             if loss_config.name == 'dpo':
                 loss_kwargs = {'beta': loss_config.beta, 'reference_free': loss_config.reference_free, 'label_smoothing': loss_config.label_smoothing, 'ipo': False}
@@ -645,33 +646,33 @@ class BasicTrainer(object):
 
             policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
             metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
-        elif loss_config.name == 'tdpo':
-            chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, policy_chosen_logps, policy_rejected_logps\
-                = self.tdpo_concatenated_forward(self.policy, self.reference_model, batch)
-            losses, chosen_rewards, rejected_rewards = tdpo_loss(chosen_logps_margin, rejected_logps_margin,
-                                                                 chosen_position_kl, rejected_position_kl,
-                                                                 beta=loss_config.beta, alpha=loss_config.alpha, if_tdpo2=loss_config.if_tdpo2)
+        #elif loss_config.name == 'tdpo':
+        #    chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, policy_chosen_logps, policy_rejected_logps\
+        #        = self.tdpo_concatenated_forward(self.policy, self.reference_model, batch, mode)
+        #    losses, chosen_rewards, rejected_rewards = tdpo_loss(chosen_logps_margin, rejected_logps_margin,
+        #                                                         chosen_position_kl, rejected_position_kl,
+        #                                                         beta=loss_config.beta, alpha=loss_config.alpha, if_tdpo2=loss_config.if_tdpo2)
 
-            reward_accuracies = (chosen_rewards > rejected_rewards).float()
+        #    reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
-            chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
-            rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
-            reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
+        #    chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
+        #    rejected_rewards = all_gather_if_needed(rejected_rewards, self.rank, self.world_size)
+        #    reward_accuracies = all_gather_if_needed(reward_accuracies, self.rank, self.world_size)
 
-            metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
-            metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
+        #    metrics[f'rewards_{train_test}/chosen'] = chosen_rewards.cpu().numpy().tolist()
+        #    metrics[f'rewards_{train_test}/rejected'] = rejected_rewards.cpu().numpy().tolist()
+        #    metrics[f'rewards_{train_test}/accuracies'] = reward_accuracies.cpu().numpy().tolist()
+        #    metrics[f'rewards_{train_test}/margins'] = (chosen_rewards - rejected_rewards).cpu().numpy().tolist()
 
-            all_device_chosen_position_kl = all_gather_if_needed(chosen_position_kl.detach(), self.rank, self.world_size)
-            all_device_rejected_position_kl = all_gather_if_needed(rejected_position_kl.detach(), self.rank, self.world_size)
+        #    all_device_chosen_position_kl = all_gather_if_needed(chosen_position_kl.detach(), self.rank, self.world_size)
+        #    all_device_rejected_position_kl = all_gather_if_needed(rejected_position_kl.detach(), self.rank, self.world_size)
 
-            metrics[f'kl_{train_test}/chosen'] = all_device_chosen_position_kl.cpu().numpy().tolist()
-            metrics[f'kl_{train_test}/rejected'] = all_device_rejected_position_kl.cpu().numpy().tolist()
-            metrics[f'kl_{train_test}/margin'] = (all_device_chosen_position_kl - all_device_rejected_position_kl).cpu().numpy().tolist()
+        #    metrics[f'kl_{train_test}/chosen'] = all_device_chosen_position_kl.cpu().numpy().tolist()
+        #    metrics[f'kl_{train_test}/rejected'] = all_device_rejected_position_kl.cpu().numpy().tolist()
+        #    metrics[f'kl_{train_test}/margin'] = (all_device_chosen_position_kl - all_device_rejected_position_kl).cpu().numpy().tolist()
 
-            policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
-            metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
+        #    policy_rejected_logps = all_gather_if_needed(policy_rejected_logps.detach(), self.rank, self.world_size)
+        #    metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
         elif loss_config.name == 'tisdpo':
             chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, policy_chosen_logps, policy_rejected_logps\
                 = self.tisdpo_concatenated_forward(self.policy, self.reference_model, batch)
