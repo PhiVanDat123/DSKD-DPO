@@ -612,7 +612,7 @@ class PrefData(Dataset):
 
         self.data[idx]["rejected_weight"] = self.data[idx].get("rejected_weight", None)
         self.data[idx]["chosen_weight"] = self.data[idx].get("chosen_weight", None)
-
+        '''
         if self.transform_method:
             self.data[idx]["chosen_weight"] = self.apply_weight_transform(
                 self.data[idx]["chosen_weight"],
@@ -623,6 +623,7 @@ class PrefData(Dataset):
             self.data[idx]["rejected_weight"] = self.apply_weight_transform(
                 self.data[idx]["rejected_weight"], self.transform_method, self.transform_params
             )
+        '''
         if self.reverse_dataset:
             self.safe_swap_chosen_rejected(self.data[idx])
             self.data[idx]["chosen"], self.data[idx]["rejected"] = (
