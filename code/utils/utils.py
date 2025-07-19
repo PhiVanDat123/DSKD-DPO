@@ -121,6 +121,7 @@ def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, dev
 '''
 
 def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
+    print("Input batch before slicing:", batch)
     """Slice only `model_data` and `no_model_data` from batch, and move to device."""
     sliced = {}
     
