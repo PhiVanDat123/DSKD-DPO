@@ -23,6 +23,7 @@ def pad_3d_list_of_lists(input_list, pad_value=-1):
     return padded
 
 def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.Tensor]:
+    print(f"[DEBUG] batch keys: {list(batch.keys())}, mode: {mode}")
     concatenated_batch = {}
     keys = [k for k in batch if mode in k]
     keys.extend([k for k in batch if "weight" in k])
