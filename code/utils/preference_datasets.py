@@ -398,7 +398,7 @@ def get_batch_iterator(names: List[str],
                 batch_element = tokenize_batch_element(prompt, sft_target, sft_target, truncation_mode, tokenizer, max_length, max_prompt_length)
                 batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
                 batch.append(batch_element)
-                print("[debug]", batch_element.keys())
+                #print("[debug]", batch_element.keys())
                 example_idx += 1
                 if len(batch) == batch_size:
                     yield collate_fn(batch)
