@@ -11,10 +11,10 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
   model.policy_name_or_path=meta-llama/Llama-3.1-8B \
-  model.reference_name_or_path=Qwen/Qwen2.5-14B \
-  model.teacher_tokenizer_name_or_path=Qwen/Qwen2.5-14B \
+  model.reference_name_or_path=meta-llama/Llama-3.1-8B \
+  model.teacher_tokenizer_name_or_path=meta-llama/Llama-3.1-8B \
   model.student_tokenizer_name_or_path=meta-llama/Llama-3.1-8B \
-  model.policy_block_name=Qwen2DecoderLayer \
+  model.policy_block_name=MistralDecoderLayer \
   model.reference_block_name=MistralDecoderLayer \
   loss=sft \
   eval_every=5 \
