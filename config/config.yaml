@@ -116,10 +116,10 @@ report_logits: false
 #teacher_model_type: "qwen"
 #model_path: "meta-llama/Llama-3.1-8B"
 #model_type: "llama"
-teacher_model_path: "Qwen/Qwen2.5-0.5B"
+reference_name_or_path: "Qwen/Qwen2.5-14B"
 teacher_model_type: "qwen"
-model_path: "Qwen/Qwen2.5-0.5B"
-model_type: "qwen"
+policy_name_or_path: "meta-llama/Llama-3.1-8B"
+model_type: "llama"
 model_dtype: "fp32" 
 projector_config_path: '/home/hungpv/projects/DSKD-DPO/config/projector/projector_config.json'
 teacher_to_student_token_mapping: None

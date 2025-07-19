@@ -18,7 +18,7 @@ class Distiller(nn.Module):
         self.student_model_type = config.model_type
         self.student_model, self.student_tokenizer = self.load_student_model()
         
-        if self.config.teacher_model_path is not None:
+        if self.config.reference_name_or_path is not None:
             self.teacher_model, self.teacher_tokenizers = self.load_teacher_model()
         else:
             self.teacher_model, self.teacher_tokenizers = None, {}
@@ -137,7 +137,7 @@ class Distiller(nn.Module):
         if self.config.projector_path is not None:
             projector_path = os.path.join(self.config.projector_path, "projector.pt")
         else:
-            projector_path = os.path.join(self.config.model_path, "projector.pt")
+            projector_path = os.path.join(self.config.policy_name_or_path, "projector.pt")
 
         if os.path.exists(projector_path):
             projector_params = torch.load(projector_path, map_location=f"cuda:{self.device}")
@@ -155,10 +155,10 @@ class Distiller(nn.Module):
     
     def load_student_model(self):
         log_rank("Loading student model...")
-        config = AutoConfig.from_pretrained(self.config.model_path, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(self.config.policy_name_or_path, trust_remote_code=True)
         config.is_model_parallel = False
 
-        tokenizer = self.load_tokenizer(self.config.model_type, self.config.model_path)
+        tokenizer = self.load_tokenizer(self.config.model_type, self.config.policy_name_or_path)
         
         if hasattr(config, "n_embed"):
             self.student_hidden_size = config.n_embed
@@ -226,10 +226,10 @@ class Distiller(nn.Module):
     
     def load_teacher_model(self):
         log_rank("Loading teacher model...")
-        config = AutoConfig.from_pretrained(self.config.teacher_model_path)
+        config = AutoConfig.from_pretrained(self.config.reference_name_or_path)
         config.is_model_parallel = False
 
-        tokenizer = self.load_tokenizer(self.config.teacher_model_type, self.config.teacher_model_path)
+        tokenizer = self.load_tokenizer(self.config.teacher_model_type, self.config.reference_name_or_path)
 
         if hasattr(config, "n_embed"):
             self.teacher_hidden_size = config.n_embed
@@ -237,7 +237,7 @@ class Distiller(nn.Module):
             self.teacher_hidden_size = config.hidden_size
 
         model = AutoModelForCausalLM.from_pretrained(
-            self.config.teacher_model_path, 
+            self.config.reference_name_or_path, 
             config=config, 
             device_map=None, 
             torch_dtype=self.dtype,
