@@ -235,7 +235,7 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
             
         # import ipdb; ipdb.set_trace()
 
-        print("[collate fn] Batch keys:", batch.keys())
+        print("[collate fn] Batch keys:", batch[0].keys())
         for k in batch:
             print(f"{k}: {type(batch[k])}, shape: {getattr(batch[k], 'shape', 'not tensor')}")
 
