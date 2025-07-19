@@ -327,11 +327,12 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
         batch[f"chosen_{mode}_parent_list"].shape[2], batch[f"rejected_{mode}_parent_list"].shape[2]
     )
     concatenated_batch = {}
-    keys = [k for k in batch if mode in k]
-    keys.extend([k for k in batch if "weight" in k])
+    #keys = [k for k in batch if mode in k]
+    #keys.extend([k for k in batch if "weight" in k])
+    keys = [k for k in batch if k.startswith(f"chosen_{mode}") or k.startswith(f"rejected_{mode}")]
     for k in keys:
         # if k.startswith("chosen") and isinstance(batch[k], torch.Tensor):
-        if k.startswith("chosen"):
+        if k.startswith(f"chosen_{mode}"):
             pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("chosen", "concatenated")
             if "weight" in k:
@@ -354,7 +355,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                 )
     for k in keys:
         # if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
-        if k.startswith("rejected"):
+        if k.startswith(f"rejected_{mode}"):
             pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("rejected", "concatenated")
             if "weight" in k:
