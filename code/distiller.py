@@ -175,7 +175,7 @@ class Distiller(nn.Module):
             raise NotImplementedError("Invalid model_dtype for f`{self.config.model_dtype}`")
         
         model = AutoModelForCausalLM.from_pretrained(
-            self.config.model_path, 
+            self.config.policy_name_or_path, 
             config=config, 
             device_map=None, 
             torch_dtype=self.dtype,
