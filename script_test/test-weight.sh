@@ -12,7 +12,7 @@ data_path="tonyshelby/ultra-feedback_checking"
 output_dir="generated-data/ultra-feedback-tisdpo"
 batch_size=4
 num_gpus=2
-force_sequential=false  # Set to true if multiprocessing causes issues
+force_sequential=true  # Set to true if multiprocessing causes issues
 split="train"
 
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
