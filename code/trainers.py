@@ -428,7 +428,6 @@ class BasicTrainer(object):
         self.policy = policy
         self.reference_model = reference_model
 
-        print(self.transform_config)
 
         if self.config.loss.name == "tisdpo_KDAlign":
             self.distiller = Distiller(
@@ -445,14 +444,12 @@ class BasicTrainer(object):
             train_test_split="train",
             sft_mode=(config.loss.name == "sft"),
             reverse_dataset=config.reverse_dataset,
-            transform_config=self.transform_config,
         )
         self.eval_dataset = PrefData(
             data_path=config.datasets,
             train_test_split="test",
             sft_mode=(config.loss.name == "sft"),
             reverse_dataset=config.reverse_dataset,
-            transform_config=self.transform_config,
         )
 
         self.train_iterator = DataLoader(
