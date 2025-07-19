@@ -154,18 +154,19 @@ class DualSpaceKDWithCMA(VariousDivergence):
         self.distiller = distiller
         model = distiller.student_model
         teacher_model = distiller.teacher_model
-        concat_data = concatenated_inputs(ds["train"])
+        concat_student_data = concatenated_inputs(ds["train"], mode="student")
+        concat_teacher_data = concatenated_inputs(ds["train"], mode="teacher")
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
-                concat_data["concatenated_teacher_input_ids"],
-                attention_mask=concat_data[f"concatenated_teacher_attention_mask"],
+                concat_teacher_data["concatenated_teacher_input_ids"],
+                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"],
                 #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
         #concat_output_data = concatenated_inputs(output_data)
-        target = concat_data["concatenated_student_labels"]
-        teacher_target = concat_data["concatenated_teacher_labels"]
+        target = concat_student_data["concatenated_student_labels"]
+        teacher_target = concat_teacher_data["concatenated_teacher_labels"]
         
         pad_mask = target.ne(self.padding_id)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
@@ -199,12 +200,12 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, concat_data["concatenated_student_input_ids"], torch.zeros_like(target))
+        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target))
         stu_input_embeds = stu_embed_tokens(formal_input).detach()
         stu_target_embeds = stu_embed_tokens(formal_target).detach()
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, concat_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target))
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target))
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
 
