@@ -928,30 +928,31 @@ class BasicTrainer(object):
             #### END EVALUATION ####
         
             ### === Phase 1: Train Projector ===
-            for param in self.policy.parameters():
-                param.requires_grad = False
-            self.distiller.projectors.train()
+            if config.loss.name in {'tisdpo'}:
+                for param in self.policy.parameters():
+                    param.requires_grad = False
+                self.distiller.projectors.train()
 
-            self.projector_optimizer.zero_grad()
-            for microbatch_idx in range(self.config.gradient_accumulation_steps):
-                #print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
-                global_microbatch = slice_and_move_batch_for_device(
-                    batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
-                )
-                local_microbatch = slice_and_move_batch_for_device(
-                    global_microbatch, self.rank, self.world_size, self.rank
-                )
-                #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
-                concat_student_data = concatenated_inputs(local_microbatch, mode='student')
-                concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
-                t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(concat_student_data=concat_student_data, concat_teacher_data=concat_teacher_data, distiller=distiller)
+                self.projector_optimizer.zero_grad()
+                for microbatch_idx in range(self.config.gradient_accumulation_steps):
+                    #print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
+                    global_microbatch = slice_and_move_batch_for_device(
+                        batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
+                    )
+                    local_microbatch = slice_and_move_batch_for_device(
+                        global_microbatch, self.rank, self.world_size, self.rank
+                    )
+                    #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
+                    concat_student_data = concatenated_inputs(local_microbatch, mode='student')
+                    concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
+                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(concat_student_data=concat_student_data, concat_teacher_data=concat_teacher_data, distiller=distiller)
 
-                #  Projector loss vẫn cần tính gradient
-                projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
-                (projector_loss / self.config.gradient_accumulation_steps).backward()
+                    #  Projector loss vẫn cần tính gradient
+                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
+                    (projector_loss / self.config.gradient_accumulation_steps).backward()
 
-            self.projector_optimizer.step()
-            self.projector_scheduler.step()
+                self.projector_optimizer.step()
+                self.projector_scheduler.step()
 
             ### === Phase 2: Train Student Model ===
             for param in self.distiller.projectors.parameters():
