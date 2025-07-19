@@ -3,7 +3,7 @@ seed: 0
 
 #mode
 policy_mode: student
-reference_mode: null
+reference_mode: teacher
 
 # number of iterators in training
 train_iterator: 100
@@ -141,9 +141,6 @@ teacher_peft_path: None
 projector_path: None
 
 projector_warmup_steps: 1000
-
-policy_mode: "student"
-reference_mode: "teacher"
 
 defaults:
 - _self_
