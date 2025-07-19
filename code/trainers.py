@@ -432,17 +432,6 @@ class BasicTrainer(object):
         self.policy = policy
         self.reference_model = reference_model
 
-
-        if self.config.loss.name == "tisdpo_KDAlign":
-            self.distiller = Distiller(
-                student_model=self.policy,
-                teacher_model=self.reference_model,
-                student_tokenizer=self.tokenizer["student"],
-                teacher_tokenizer=self.tokenizer["teacher"],
-                config=self.config,
-            )
-            self.criterion = DualSpaceKDWithCMA(args=self.config.loss)
-
         self.train_dataset = PrefData(
             data_path=config.datasets,
             train_test_split="train",
@@ -460,8 +449,8 @@ class BasicTrainer(object):
             self.train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
-            collate_fn=get_collate_fn(self.tokenizer),
-            #collate_fn=CustomCollate(self.tokenizer),
+            #collate_fn=get_collate_fn(self.tokenizer),
+            collate_fn=CustomCollate(self.tokenizer),
             pin_memory=True,
             num_workers=2,
             drop_last=True,
@@ -480,8 +469,8 @@ class BasicTrainer(object):
             self.eval_dataset,
             batch_size=config.eval_batch_size,
             shuffle=True,
-            collate_fn=get_collate_fn(self.tokenizer),
-            #collate_fn=CustomCollate(self.tokenizer),
+            #collate_fn=get_collate_fn(self.tokenizer),
+            collate_fn=CustomCollate(self.tokenizer),
             pin_memory=True,
             num_workers=2,
             drop_last=True,
