@@ -977,7 +977,7 @@ class BasicTrainer(object):
                 local_microbatch = slice_and_move_batch_for_device(
                     global_microbatch, self.rank, self.world_size, self.rank
                 )
-                
+                print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
                 concat_student_data = concatenated_inputs(local_microbatch, mode='student')
                 concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
                 t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(concat_student_data=concat_student_data, concat_teacher_data=concat_teacher_data, distiller=distiller)
