@@ -391,6 +391,10 @@ class BasicTrainer(object):
         self.config = config
         self.run_dir = run_dir
 
+        self.loss = CrossEntropyLoss(config, padding_id=-100)
+        self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
+        self.distiller = Distiller(config)
+
         teacher_tokenizer_name_or_path = (
             config.model.teacher_tokenizer_name_or_path or config.model.teacher_name_or_path
         )
