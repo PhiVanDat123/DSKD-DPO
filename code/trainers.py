@@ -678,7 +678,7 @@ class BasicTrainer(object):
             metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
 
         elif loss_config.name == 'sft':
-            print("[sft] Batch content:", batch)
+            #print("[sft] Batch content:", batch)
             policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
             policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False, token_level=False)
 
@@ -859,7 +859,7 @@ class BasicTrainer(object):
                 for eval_batch in (tqdm.tqdm(self.eval_batches, desc='Computing eval metrics') if self.rank == 0 else self.eval_batches):
                     #print("[eval] Eval batch content:", eval_batch)
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
-                    #print("[eval] Local eval batch content:", local_eval_batch)
+                    print("[eval] Local eval batch content:", local_eval_batch)
                     with torch.no_grad():
                         _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False)
 
