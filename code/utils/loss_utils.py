@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
-from utils import drop_leading_zeros_batch, drop_zr_cols_and_padded, pad_to_length
+from .utils import drop_leading_zeros_batch, drop_zr_cols_and_padded, pad_to_length
 
 def mask_from_neg100(x):
     """
