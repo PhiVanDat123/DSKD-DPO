@@ -590,7 +590,7 @@ class BasicTrainer(object):
 
     def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
         """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
-        print("[trainers] Batch content:", batch)
+        #print("[trainers] Batch content:", batch)
         metrics = {}
         train_test = 'train' if train else 'eval'
 
@@ -678,7 +678,7 @@ class BasicTrainer(object):
             metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
 
         elif loss_config.name == 'sft':
-            print("[sft] Batch content:", batch)
+            #print("[sft] Batch content:", batch)
             policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
             policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False, token_level=False)
 
