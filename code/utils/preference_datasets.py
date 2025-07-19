@@ -167,6 +167,10 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
         prompt = example['prompt']
         chosen = example['chosen']
         rejected = example['rejected']
+        chosen_teacher_parent_dict = json.loads(example["chosen_teacher_parent_dict"])
+        rejected_teacher_parent_dict = json.loads(example["rejected_teacher_parent_dict"])
+        chosen_student_parent_dict = json.loads(example["chosen_student_parent_dict"])
+        rejected_student_parent_dict = json.loads(example["rejected_student_parent_dict"])
             
         # Get weights
         rejected_weight_exists = 'rejected_weight' in example
@@ -187,9 +191,13 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
         data[prompt]['pairs'].append((n_responses, n_responses + 1))
         data[prompt]['responses'].extend(responses)
         data[prompt]['sft_target'] = chosen
+        data[prompt]["chosen_teacher_parent_dict"].append(chosen_teacher_parent_dict)
+        data[prompt]["rejected_teacher_parent_dict"].append(rejected_teacher_parent_dict)
+        data[prompt]["chosen_student_parent_dict"].append(chosen_student_parent_dict)
+        data[prompt]["rejected_student_parent_dict"].append(rejected_student_parent_dict)
             
-            # Process weights
-            #data[prompt]['rejected_weight'].append(apply_weight_transform(rejected_weight, negate=False))
+        # Process weights
+        #data[prompt]['rejected_weight'].append(apply_weight_transform(rejected_weight, negate=False))
         if rejected_weight is None:
             data[prompt]['rejected_weight'] = None
                 
@@ -198,6 +206,7 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
             data[prompt]['chosen_weight'] = None
                 
     return data
+
 
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     """Returns a collate function for the given tokenizer.
@@ -240,6 +249,7 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
 
 
 
+'''
 def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_mode: str, tokenizer, max_length: int, max_prompt_length: int, rejected_weight=None, chosen_weight=None) -> Dict:
     """Tokenize a single batch element.
     
@@ -326,8 +336,137 @@ def tokenize_batch_element(prompt: str, chosen: str, rejected: str, truncation_m
 
     
     return batch
+'''
 
+def tokenize_batch_element(
+    prompt: str,
+    chosen: str,
+    rejected: str,
+    truncation_mode: str,
+    tokenizer,
+    max_length: int,
+    max_prompt_length: int,
+    chosen_teacher_parent_dict: Dict,
+    rejected_teacher_parent_dict: Dict,
+    chosen_student_parent_dict: Dict,
+    rejected_student_parent_dict: Dict,
+    rejected_weight=None,
+    chosen_weight=None,
+) -> Dict:
+    """Tokenize a single batch element.
 
+    At this stage, we don't convert to PyTorch tensors yet; we just handle the truncation
+      in case the prompt + chosen or prompt + rejected responses is/are too long. First
+      we truncate the prompt; if we're still too long, we truncate the chosen/rejected.
+
+    We also create the labels for the chosen/rejected responses, which are of length equal to
+      the sum of the length of the prompt and the chosen/rejected response, with -100 for the
+      prompt tokens.
+    """
+    chosen_tokens = tokenizer(chosen, add_special_tokens=False, return_offsets_mapping=True)
+    # len(chosen_tokens['input_ids'])  104
+    rejected_tokens = tokenizer(rejected, add_special_tokens=False, return_offsets_mapping=True)
+    prompt_tokens = tokenizer(prompt, add_special_tokens=False)
+
+    if rejected_weight is not None:
+        assert len(rejected_weight) == len(rejected_teacher_parent_dict)
+
+    if chosen_weight is not None:
+        assert len(chosen_weight) == len(chosen_teacher_parent_dict)
+
+    assert tokenizer.eos_token_id not in prompt_tokens["input_ids"], (
+        f"Prompt contains EOS token: {prompt}"
+    )
+    assert tokenizer.eos_token_id not in chosen_tokens["input_ids"], (
+        f"Chosen response contains EOS token: {chosen}"
+    )
+    assert tokenizer.eos_token_id not in rejected_tokens["input_ids"], (
+        f"Rejected response contains EOS token: {rejected}"
+    )
+
+    chosen_tokens["input_ids"].append(tokenizer.eos_token_id)
+    chosen_tokens["attention_mask"].append(1)
+
+    rejected_tokens["input_ids"].append(tokenizer.eos_token_id)
+    rejected_tokens["attention_mask"].append(1)
+
+    longer_response_length = max(len(chosen_tokens["input_ids"]), len(rejected_tokens["input_ids"]))
+
+    # if combined sequence is too long, truncate the prompt
+    if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
+        if truncation_mode == "keep_start":
+            prompt_tokens = {k: v[:max_prompt_length] for k, v in prompt_tokens.items()}
+        elif truncation_mode == "keep_end":
+            prompt_tokens = {k: v[-max_prompt_length:] for k, v in prompt_tokens.items()}
+        else:
+            raise ValueError(f"Unknown truncation mode: {truncation_mode}")
+
+    # if that's still too long, truncate the response
+    if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
+        # print('truncate=====', len(chosen_tokens['input_ids']), len(rejected_tokens['input_ids']))
+        chosen_tokens = {k: v[: max_length - max_prompt_length] for k, v in chosen_tokens.items()}
+        rejected_tokens = {
+            k: v[: max_length - max_prompt_length] for k, v in rejected_tokens.items()
+        }
+
+    # Create labels
+    chosen_sequence_tokens = {
+        k: prompt_tokens[k] + chosen_tokens[k] for k in chosen_tokens if k != "offset_mapping"
+    }
+    rejected_sequence_tokens = {
+        k: prompt_tokens[k] + rejected_tokens[k] for k in rejected_tokens if k != "offset_mapping"
+    }
+    chosen_sequence_tokens["labels"] = chosen_sequence_tokens["input_ids"][:]
+    chosen_sequence_tokens["labels"][: len(prompt_tokens["input_ids"])] = [-100] * len(
+        prompt_tokens["input_ids"]
+    )
+    chosen_sequence_tokens["offset_mapping"] = chosen_tokens["offset_mapping"]
+    chosen_sequence_tokens["teacher_parent_dict"] = chosen_teacher_parent_dict
+    chosen_sequence_tokens["student_parent_dict"] = chosen_student_parent_dict
+    rejected_sequence_tokens["labels"] = rejected_sequence_tokens["input_ids"][:]
+    rejected_sequence_tokens["labels"][: len(prompt_tokens["input_ids"])] = [-100] * len(
+        prompt_tokens["input_ids"]
+    )
+    rejected_sequence_tokens["offset_mapping"] = rejected_tokens["offset_mapping"]
+    rejected_sequence_tokens["teacher_parent_dict"] = rejected_teacher_parent_dict
+    rejected_sequence_tokens["student_parent_dict"] = rejected_student_parent_dict
+
+    batch = {}
+
+    if rejected_weight is not None:
+        batch["rejected_weight"] = rejected_weight[: len(rejected_teacher_parent_dict) - 1] + [
+            0
+        ]  ## ? why, needs further testing!!
+    else:
+        batch["rejected_weight"] = [1] * (len(rejected_teacher_parent_dict))
+
+    if chosen_weight is not None:
+        batch["chosen_weight"] = chosen_weight[: len(chosen_teacher_parent_dict) - 1] + [0]
+    else:
+        batch["chosen_weight"] = [1] * (len(chosen_teacher_parent_dict))
+
+    assert len(batch["chosen_weight"]) == len(chosen_sequence_tokens["teacher_parent_dict"])
+    assert len(batch["rejected_weight"]) == len(rejected_sequence_tokens["teacher_parent_dict"])
+
+    batch["prompt"] = prompt
+    batch["chosen"] = prompt + " " + chosen
+    batch["rejected"] = prompt + " " + rejected
+    batch["chosen_response_only"] = chosen
+    batch["rejected_response_only"] = rejected
+
+    for k, toks in {
+        "chosen": chosen_sequence_tokens,
+        "rejected": rejected_sequence_tokens,
+        "prompt": prompt_tokens,
+    }.items():
+        for type_key, tokens in toks.items():
+            if type_key == "token_type_ids":
+                continue
+            batch[f"{k}_{type_key}"] = tokens
+
+    return batch
+
+'''
 def get_batch_iterator(names: List[str],
                        tokenizer,
                        split: str = 'train',
@@ -436,7 +575,199 @@ def get_batch_iterator(names: List[str],
             break
 
         epoch_idx += 1
+'''
 
+def get_batch_iterator(
+    names: List[str],
+    tokenizer,
+    split: str = "train",
+    batch_size: int = 1,
+    shuffle: bool = True,
+    max_length: int = 512,
+    max_prompt_length: int = 128,
+    sft_mode: bool = False,
+    n_epochs: Optional[int] = None,
+    n_examples: Optional[int] = None,
+    seed: int = 0,
+    silent: bool = False,
+    transform_config=None,
+    base_data_dir: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+    reverse_dataset: bool = False,
+) -> Iterator[Dict]:
+    """Get an iterator over batches of data. Stops after n_epochs or n_examples, whichever comes first.
+
+    Args:
+        names: Names of datasets to use.
+        tokenizer: Tokenizer to use.
+        split: Which split to use.
+        batch_size: Batch size.
+        shuffle: Whether to shuffle the data after each epoch.
+        max_length: Maximum length of the combined prompt + response.
+        max_prompt_length: Maximum length of the prompt.
+        sft_mode: Whether to use SFT mode (i.e., return sft_target instead of chosen/rejected). In sft mode, we just return chosen_input_ids, but they contain the sft_target.
+        n_epochs: Number of epochs to run for. This or n_examples must be specified.
+        n_examples: Number of examples to run for. This or n_epochs must be specified.
+        seed: Random seed.
+        silent: Whether to silence the progress bar(s).
+        transform_config: Configuration for weight transformation. Can be a string (method name) or
+                          a dict with a 'method' field and parameters for that method.
+        base_data_dir: Base directory for the dataset.
+        cache_dir: Directory to cache the datasets in.
+        reverse_dataset: Whether to reverse the dataset.
+    """
+    assert n_epochs is not None or n_examples is not None, (
+        "Must specify either n_epochs or n_examples"
+    )
+    if silent:
+        datasets.logging.disable_progress_bar()
+        datasets.logging.set_verbosity_error()
+
+    with TemporarilySeededRandom(seed):
+        permutation_seeds = iter(np.random.randint(0, 2**32, size=1000000))
+        flat_data = []
+        for name in names:
+            truncation_mode = "keep_end" if name == "hh" else "keep_start"
+            for prompt, data in get_dataset(
+                name,
+                split,
+                silent=silent,
+                cache_dir=cache_dir,
+                transform_config=transform_config,
+                base_data_dir=base_data_dir,
+                reverse_dataset=reverse_dataset,
+            ).items():
+                flat_data.append(
+                    (
+                        prompt,
+                        data["responses"],
+                        data["pairs"],
+                        data["sft_target"],
+                        data["rejected_weight"],
+                        data["chosen_weight"],
+                        data["chosen_teacher_paren_dict"],
+                        data["rejected_teacher_paren_dict"],
+                        data["chosen_student_paren_dict"],
+                        data["rejected_student_paren_dict"],
+                        truncation_mode,
+                    )
+                )
+
+        # truncation_mode = "keep_start"
+        # for prompt, data in get_dataset(
+        #             #name,
+        #             split,
+        #             silent=silent,
+        #             cache_dir=cache_dir,
+        #             transform_config=transform_config,
+        #             base_data_dir=base_data_dir,
+        #             reverse_dataset=reverse_dataset,
+        #         ).items():
+        #             flat_data.append(
+        #                 (
+        #                     prompt,
+        #                     data["responses"],
+        #                     data["pairs"],
+        #                     data["sft_target"],
+        #                     data["rejected_weight"],
+        #                     data["chosen_weight"],
+        #                     data["chosen_teacher_paren_dict"],
+        #                     data["rejected_teacher_paren_dict"],
+        #                     data["chosen_student_paren_dict"],
+        #                     data["rejected_student_paren_dict"],
+        #                     truncation_mode,
+        #                 )
+        #             )
+
+    collate_fn = get_collate_fn(tokenizer)
+
+    epoch_idx = 0
+    example_idx = 0
+    done = False
+    while True:
+        if n_epochs is not None and epoch_idx >= n_epochs:
+            if not silent:
+                print(f"Finished generating {n_epochs} epochs on {split} split")
+            break
+        if shuffle:
+            with TemporarilySeededRandom(next(permutation_seeds)):
+                random.shuffle(flat_data)
+
+        batch = []
+        for (
+            prompt,
+            responses,
+            pairs,
+            sft_target,
+            rejected_weight,
+            chosen_weight,
+            chosen_teacher_parent_dict,
+            rejected_teacher_parent_dict,
+            chosen_student_parent_dict,
+            rejected_student_parent_dict,
+            truncation_mode,
+        ) in flat_data:
+            if done:
+                break
+            if sft_mode:
+                batch_element = tokenize_batch_element(
+                    prompt,
+                    sft_target,
+                    sft_target,
+                    truncation_mode,
+                    tokenizer,
+                    max_length,
+                    max_prompt_length,
+                    chosen_teacher_parent_dict,
+                    rejected_teacher_parent_dict,
+                    chosen_student_parent_dict,
+                    rejected_student_parent_dict,
+                )
+                batch_element = {k: v for k, v in batch_element.items() if "rejected" not in k}
+                batch.append(batch_element)
+                example_idx += 1
+                if len(batch) == batch_size:
+                    yield collate_fn(batch)
+                    if n_examples is not None and example_idx >= n_examples:
+                        if not silent:
+                            print(f"Finished generating {n_examples} examples on {split} split")
+                        done = True
+
+                    batch = []
+            else:
+                for index, p in enumerate(pairs):
+                    if done:
+                        break
+                    rejected_weight_item = rejected_weight[index] if rejected_weight else None
+                    chosen_weight_item = chosen_weight[index] if chosen_weight else None
+                    batch_element = tokenize_batch_element(
+                        prompt,
+                        responses[p[0]],
+                        responses[p[1]],
+                        truncation_mode,
+                        tokenizer,
+                        max_length,
+                        max_prompt_length,
+                        chosen_teacher_parent_dict,
+                        rejected_teacher_parent_dict,
+                        chosen_student_parent_dict,
+                        rejected_student_parent_dict,
+                        rejected_weight_item,
+                        chosen_weight_item,
+                    )
+                    batch.append(batch_element)
+                    example_idx += 1
+                    if len(batch) == batch_size:
+                        yield collate_fn(batch)
+                        if n_examples is not None and example_idx >= n_examples:
+                            if not silent:
+                                print(f"FINISHED {n_examples} EXAMPLES on {split} split")
+                            done = True
+                        batch = []
+        if done:
+            break
+
+        epoch_idx += 1
 
 
 def strings_match_up_to_spaces(str_a: str, str_b: str) -> bool:
