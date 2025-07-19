@@ -871,6 +871,7 @@ class BasicTrainer(object):
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
                     with torch.no_grad():
                         _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False)
+                        print("[DEBUG] local_eval_batch keys:", local_eval_batch.keys() if local_eval_batch else "Empty batch!")
 
                     for k, v in eval_metrics.items():
                         all_eval_metrics[k].extend(v)
