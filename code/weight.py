@@ -19,24 +19,23 @@ from trainers import concatenated_inputs
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
-def compute_logits_target(
-        self, input_data, output_data, distiller, teacher_model
+def compute_dual_space_kd_loss_with_cma(
+        self, concat_student_data, concat_teacher_data, distiller
     ):  
         self.distiller = distiller
         model = distiller.student_model
-        teacher_model = teacher_model
-        concat_input_data = concatenated_inputs(input_data)
+        teacher_model = distiller.teacher_model
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
-                concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"],
-                attention_mask=concat_input_data[f"teacher_{distiller.teacher_model_type}_attention_mask"],
-                position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
+                concat_teacher_data["concatenated_teacher_input_ids"],
+                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"],
+                #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
-        concat_output_data = concatenated_inputs(output_data)
-        target = concat_output_data["label"]
-        teacher_target = concat_output_data[f"teacher_{distiller.teacher_model_type}_label"]
+        #concat_output_data = concatenated_inputs(output_data)
+        target = concat_student_data["concatenated_student_labels"]
+        teacher_target = concat_teacher_data["concatenated_teacher_labels"]
         
         pad_mask = target.ne(self.padding_id)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
@@ -70,12 +69,12 @@ def compute_logits_target(
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, concat_input_data["input_ids"], torch.zeros_like(target))
+        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target))
         stu_input_embeds = stu_embed_tokens(formal_input).detach()
         stu_target_embeds = stu_embed_tokens(formal_target).detach()
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, concat_input_data[f"teacher_{distiller.teacher_model_type}_input_ids"], torch.zeros_like(teacher_target))
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target))
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
 
@@ -170,8 +169,8 @@ def token_weight(
         # attention_mask = samples[f"{mode}_teacher_attention_mask"][i : i + batch_size]
         # attention_mask_list = [torch.tensor(i) for i in attention_mask]
         # attention_mask_tensor = pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
-        logits_1 = compute_logits_target(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=positive_model)
-        logits_2 = compute_logits_target(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=negative_model)
+        logits_1 = compute_dual_space_kd_loss_with_cma(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=positive_model)
+        logits_2 = compute_dual_space_kd_loss_with_cma(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=negative_model)
 
         logits_1 = torch.log_softmax(logits_1, dim=-1).cpu()
         logits_2 = torch.log_softmax(logits_2, dim=-1).cpu()

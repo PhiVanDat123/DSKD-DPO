@@ -1,10 +1,13 @@
 #!/bin/bash
 set -e
 
-cd code
 echo "Current directory: $(pwd)"
 
-/usr/local/envs/DSKD-DPO_train/bin/python -u train.py \
+CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
+
+${CONDA_PREFIX}/bin/python -u ../code/train.py \
+  --config-dir $CONFIG_DIR \
+  --config-name config.yaml \
   model=DSKD-DPO \
   model.policy_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
   model.reference_name_or_path=openai-community/gpt2 \
