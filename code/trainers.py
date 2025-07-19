@@ -18,6 +18,7 @@ from torch.distributed.fsdp.api import FullStateDictConfig, FullOptimStateDictCo
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
+import logging
 
 from utils.preference_datasets import get_batch_iterator, CustomCollate, PrefData, get_collate_fn
 from utils.utils import (
@@ -394,47 +395,6 @@ def load_tokenizer(self, model_type, path):
             tokenizer.pad_token_id = tokenizer.eos_token_id
         
         return tokenizer
-
-def set_and_load_existing_projectors(self):
-        self.projectors = nn.ModuleDict()
-        projector_config = json.load(open(self.config.projector_config_path))
-        name_dict = {
-            "s": self.student_hidden_size, 
-            "t": self.teacher_hidden_size,
-            "relu": nn.ReLU()
-        }
-        # auto-parse projector config strings to construct nn.Module
-        for projector_name in projector_config:
-            # for d in projector_config[loc]:
-            if projector_config[projector_name]["enabled"]:
-                self.projectors[projector_name] = nn.Sequential()
-
-                structure = projector_config[projector_name]["structure"].split("-")
-                for i in range(len(structure)):
-                    if structure[i] not in ["relu"]:
-                        coef = 1 if not len(structure[i][:-1]) else int(structure[i][:-1])
-                        base_size = name_dict[structure[i][-1]]
-                        structure[i] = coef * base_size
-
-                for i in range(len(structure) - 1):
-                    if isinstance(structure[i], int) and isinstance(structure[i+1], int):
-                        self.projectors[projector_name].append(
-                            nn.Linear(structure[i], structure[i+1])
-                        )
-                    elif isinstance(structure[i], int) and isinstance(structure[i+1], str):
-                        self.projectors[projector_name].append(
-                            name_dict[structure[i+1]]
-                        )
-                        last_size = structure[i]
-                    elif isinstance(structure[i], str) and isinstance(structure[i+1], int):
-                        self.projectors[projector_name].append(
-                            nn.Linear(last_size, structure[i+1])
-                        )
-                    else:
-                        raise NotImplementedError(f"Invalid structure for '{structure}'")
-                        
-        # load existing projectors if already have
-        self.load_existing_projectors()
 
 
 class BasicTrainer(object):
@@ -967,11 +927,13 @@ class BasicTrainer(object):
             #### END EVALUATION ####
         
             ### === Phase 1: Train Projector ===
-            self.policy.eval()
-            self.projector_optimizer.zero_grad()
+            for param in self.policy.parameters():
+                param.requires_grad = False
+            self.distiller.projectors.train()
 
+            self.projector_optimizer.zero_grad()
             for microbatch_idx in range(self.config.gradient_accumulation_steps):
-                print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
+                #print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
                 global_microbatch = slice_and_move_batch_for_device(
                     batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
                 )
@@ -991,6 +953,8 @@ class BasicTrainer(object):
             self.projector_scheduler.step()
 
             ### === Phase 2: Train Student Model ===
+            for param in self.distiller.projectors.parameters():
+                param.requires_grad = False
             self.policy.train()
             start_time = time.time()
             batch_metrics = defaultdict(list)
