@@ -2,7 +2,7 @@
 set -e
 
 
-cd code/weight
+#cd code/weight
 echo "Current directory: $(pwd)"
 
 model_name_1="tonyshelby/Qwen2.5_0.5B_SFT_sample"
