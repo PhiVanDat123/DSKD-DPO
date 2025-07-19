@@ -119,9 +119,9 @@ def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, dev
     on_device = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in sliced.items()}
     return on_device
 '''
-
+'''
 def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
-    print("Input batch before slicing:", batch)
+    #print("Input batch before slicing:", batch)
     """Slice only `model_data` and `no_model_data` from batch, and move to device."""
     sliced = {}
     
@@ -153,7 +153,37 @@ def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, dev
             raise TypeError(f"Unsupported value type under key '{key}': {type(v)}")
     
     return sliced
+'''
 
+def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, device: str) -> Dict:
+    """
+    Slice each Tensor or List in the batch by rank and move tensors to the correct device.
+    """
+    if not batch:
+        return {}
+
+    sliced = {}
+    for key, value in batch.items():
+        if isinstance(value, torch.Tensor):
+            chunk_size = value.shape[0] // world_size
+            start = chunk_size * rank
+            end = chunk_size * (rank + 1)
+            sliced[key] = value[start:end].to(device)
+        elif isinstance(value, list):
+            chunk_size = len(value) // world_size
+            start = chunk_size * rank
+            end = chunk_size * (rank + 1)
+            sliced[key] = value[start:end]
+        elif isinstance(value, dict):
+            # Assume dicts (e.g., parent_dict) are not batched, just copy as is
+            sliced[key] = value
+        else:
+            # For string, int, None, etc.
+            sliced[key] = value
+
+    return sliced
+
+    
 def pad_to_length(
     tensor: torch.Tensor, length: int, pad_value: Union[int, float], dim: int = -1
 ) -> torch.Tensor:
