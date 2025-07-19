@@ -58,6 +58,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.Tensor]:
                 [concatenated_batch[concatenated_key], tensor], dim=0
             )
 
+    print(f"[concatenated_inputs] Concatenated batch keys: {list(concatenated_batch.keys())}")
     return concatenated_batch
 
 
