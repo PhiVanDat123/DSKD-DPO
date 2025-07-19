@@ -5,6 +5,8 @@ set -e
 #cd code/weight
 echo "Current directory: $(pwd)"
 
+CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
+
 model_name_1="tonyshelby/Qwen2.5_0.5B_SFT_sample"
 model_name_2="openai-community/gpt2"
 # input_dir="datasets/ultra-feedback"
@@ -21,7 +23,7 @@ split="train"
 # mkdir -p $output_dir
 
 # Run the parallel processing script
-/usr/local/envs/DSKD-DPO_train/bin/python weight.py \
+${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
   --spilt=$split \
