@@ -207,7 +207,7 @@ def get_dataset(name: str, split: str, silent: bool = False, cache_dir: str = No
                 
     return data
 
-
+'''
 def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
     """Returns a collate function for the given tokenizer.
     
@@ -246,7 +246,76 @@ def get_collate_fn(tokenizer) -> Callable[[List[Dict]], Dict[str, Union[List, to
 
         return padded_batch
     return collate_fn
+'''
 
+def get_collate_fn(tokenizer: Dict) -> Callable[[List[Dict]], Dict[str, Union[List, torch.Tensor]]]:
+    """Returns a collate function for the given tokenizer.
+
+    The collate function takes a list of examples (dicts, where values are lists of
+      ints [tokens] or strings [the original texts]) and returns a batch of examples,
+      PyTorch tensors padded to the maximum length. Strings are passed through."""
+
+    def collate_fn(batch):
+        # first, pad everything to the same length
+        padded_batch = {}
+        batch_dict = {k: [d[k] for d in batch] for k in batch[0]}
+        for k in batch[0].keys():
+            if (
+                k.endswith("_input_ids")
+                or k.endswith("_attention_mask")
+                or k.endswith("_labels")
+                or k.endswith("_weight")
+            ):
+                if "prompt" in k:  # adapted from https://stackoverflow.com/questions/73256206
+                    to_pad = [torch.LongTensor(ex[k][::-1]) for ex in batch]
+                else:
+                    if k.endswith("_weight"):
+                        to_pad = [torch.FloatTensor(ex[k]) for ex in batch]
+                    else:
+                        to_pad = [torch.LongTensor(ex[k]) for ex in batch]
+                if k.endswith("_input_ids"):
+                    if "teacher" in k:
+                        padding_value = tokenizer["teacher"].eos_token_id
+                    else:
+                        padding_value = tokenizer["student"].eos_token_id
+                elif k.endswith("_labels"):
+                    padding_value = -100
+                elif k.endswith("_attention_mask") or k.endswith("_weight"):
+                    padding_value = 0
+                else:
+                    raise ValueError(f"Unexpected key in batch '{k}'")
+
+                padded_batch[k] = pad_sequence(
+                    to_pad, batch_first=True, padding_value=padding_value
+                )
+                if "prompt" in k:  # for the prompt, flip back so padding is on left side
+                    padded_batch[k] = padded_batch[k].flip(dims=[1])
+            elif k.endswith("_parent_list"):
+                padding_value = -1
+                batch_size = len(batch_dict[k])
+                max_outer = max(len(sample) for sample in batch_dict[k])
+                max_inner = max(len(sublist) for sample in batch_dict[k] for sublist in sample)
+                # Preallocate big padded tensor
+                result = torch.full(
+                    (batch_size, max_outer, max_inner), padding_value, dtype=torch.long
+                )
+
+                for i, sample in enumerate(batch_dict[k]):
+                    for j, sublist in enumerate(sample):
+                        length = len(sublist)
+                        if length > 0:
+                            result[i, j, :length] = torch.LongTensor(sublist)
+                # new_key = k.replace('list', 'tensor')
+                # padded_batch[new_key] = result
+                padded_batch[k] = result
+            else:
+                padded_batch[k] = [ex[k] for ex in batch]
+
+        # import ipdb; ipdb.set_trace()
+
+        return padded_batch
+
+    return collate_fn
 
 
 '''
