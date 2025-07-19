@@ -19,7 +19,7 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 import tensor_parallel as tp
 import contextlib
 
-from utils.preference_datasets import get_batch_iterator, CustomCollate, PrefData
+from utils.preference_datasets import get_batch_iterator, CustomCollate, PrefData, get_collate_fn
 from utils.utils import (
     slice_and_move_batch_for_device,
     formatted_dict,
@@ -460,8 +460,8 @@ class BasicTrainer(object):
             self.train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
-            # collate_fn=get_collate_fn(self.tokenizer),
-            collate_fn=CustomCollate(self.tokenizer),
+            collate_fn=get_collate_fn(self.tokenizer),
+            #collate_fn=CustomCollate(self.tokenizer),
             pin_memory=True,
             num_workers=2,
             drop_last=True,
@@ -480,8 +480,8 @@ class BasicTrainer(object):
             self.eval_dataset,
             batch_size=config.eval_batch_size,
             shuffle=True,
-            # collate_fn=get_collate_fn(self.tokenizer),
-            collate_fn=CustomCollate(self.tokenizer),
+            collate_fn=get_collate_fn(self.tokenizer),
+            #collate_fn=CustomCollate(self.tokenizer),
             pin_memory=True,
             num_workers=2,
             drop_last=True,
@@ -871,7 +871,6 @@ class BasicTrainer(object):
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
                     with torch.no_grad():
                         _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False)
-                        print("[DEBUG] local_eval_batch keys:", local_eval_batch.keys() if local_eval_batch else "Empty batch!")
 
                     for k, v in eval_metrics.items():
                         all_eval_metrics[k].extend(v)
