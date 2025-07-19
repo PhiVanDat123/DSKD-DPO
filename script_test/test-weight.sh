@@ -26,7 +26,7 @@ split="train"
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
-  --spilt=$split \
+  --split=$split \
   --input_dir $input_dir \
   --output_dir $output_dir \
   --batch_size $batch_size \
