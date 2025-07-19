@@ -867,6 +867,7 @@ class BasicTrainer(object):
         last_log = None
 
         for batch in self.train_iterator:
+            print("[debug] Batch key:", batch.keys())
             #### BEGIN EVALUATION ####
             if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
                 rank0_print(f'Running evaluation after {self.example_counter} train examples')
