@@ -396,11 +396,17 @@ def get_batch_iterator(names: List[str],
                 break
             if sft_mode:
                 batch_element = tokenize_batch_element(prompt, sft_target, sft_target, truncation_mode, tokenizer, max_length, max_prompt_length)
-                batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
+                #batch_element = {k: v for k, v in batch_element.items() if 'rejected' not in k}
+                # Lọc ra các key liên quan đến "chosen" hoặc "prompt", giữ lại input_ids và attention_mask (không cần labels hoặc weight nếu không dùng)
+                keep_keys = ['prompt', 'chosen_input_ids', 'chosen_attention_mask', 'chosen_labels', 'chosen_weight']
+                batch_element = {k: v for k, v in batch_element.items() if any(k.startswith(prefix) for prefix in keep_keys)}
                 batch.append(batch_element)
                 #print("[debug]", batch_element.keys())
                 example_idx += 1
                 if len(batch) == batch_size:
+                    out_batch = collate_fn(batch)
+                    if 'chosen_input_ids' not in out_batch:
+                        print("[ERROR] Missing chosen_input_ids in collated batch. Keys:", out_batch.keys())
                     yield collate_fn(batch)
                     if n_examples is not None and example_idx >= n_examples:
                         if not silent:
@@ -415,6 +421,8 @@ def get_batch_iterator(names: List[str],
                     rejected_weight_item = rejected_weight[index] if rejected_weight else None
                     chosen_weight_item = chosen_weight[index] if chosen_weight else None
                     batch_element = tokenize_batch_element(prompt, responses[p[0]], responses[p[1]], truncation_mode, tokenizer, max_length, max_prompt_length, rejected_weight_item, chosen_weight_item)
+                    if 'chosen_input_ids' not in batch_element:
+                        print("[ERROR] Missing chosen_input_ids in batch_element:", batch_element.keys())
                     batch.append(batch_element)
                     example_idx += 1
                     if len(batch) == batch_size:
