@@ -547,8 +547,8 @@ class BasicTrainer(object):
 
         concatenated_batch = concatenated_inputs(batch, mode)
         # dict_keys(['concatenated_weight', 'concatenated_input_ids', 'concatenated_attention_mask', 'concatenated_labels'])
-        all_logits = model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
-        all_logps = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], concatenated_batch['concatenated_weight'], average_log_prob=False, token_level=self.config.loss.token_level)
+        all_logits = model(concatenated_batch[f'concatenated_{mode}_input_ids'], attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits.to(torch.float32)
+        all_logps = _get_batch_logps(all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_{mode}_weight'], average_log_prob=False, token_level=self.config.loss.token_level)
         chosen_logps = all_logps[:batch['chosen_input_ids'].shape[0]]
         rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:]
         return chosen_logps, rejected_logps
