@@ -2,7 +2,7 @@
 seed: 0
 
 #mode
-policy_mode: student
+policy_mode: teacher
 reference_mode: teacher
 
 # number of iterators in training
