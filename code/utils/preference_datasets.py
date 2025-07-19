@@ -516,16 +516,11 @@ class PrefData(Dataset):
         data_path: str,
         sft_mode: bool,
         train_test_split: str,
-        transform_config=None,
         reverse_dataset: bool = False,
     ):
         self.data = datasets.load_dataset(data_path, split=train_test_split)
         self.sft_mode = sft_mode
         self.reverse_dataset = reverse_dataset
-        self.transform_config = transform_config
-        self.transform_method = self.transform_config.get("method", "origin")
-        # if self.transform_method in self.transform_config:
-        self.transform_params = transform_config.get(self.transform_method, {})
 
     def __len__(self):
         return len(self.data)
@@ -554,6 +549,7 @@ class PrefData(Dataset):
         d.clear()
         d.update(temp)
 
+    '''
     def apply_weight_transform(
         self, weight_values, transform_method, transform_params, negate=False
     ):
@@ -565,7 +561,7 @@ class PrefData(Dataset):
         if negate:
             weight_values = [-x for x in weight_values]
 
-        '''
+        
         # Apply the transform method with parameters
         transform_func = weight_transform_methods[transform_method]
         if transform_method == "binary" and "top_percent" in transform_params:
@@ -607,8 +603,8 @@ class PrefData(Dataset):
         else:
             # Default case with no special parameters
             return transform_func(weight_values)
-        '''
-
+        
+    '''
     def __getitem__(self, idx):
         for k in self.data[idx].keys():
             if "parent_dict" in k:
