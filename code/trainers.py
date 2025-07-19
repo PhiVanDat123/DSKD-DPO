@@ -617,8 +617,8 @@ class BasicTrainer(object):
 
         elif loss_config.name == 'sft':
             print("[trainers] Batch content:", batch)
-            policy_chosen_logits = self.policy(batch['chosen_student_input_ids'], attention_mask=batch['chosen_student_attention_mask']).logits.to(torch.float32)
-            policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_student_labels'], average_log_prob=False, token_level=False)
+            policy_chosen_logits = self.policy(batch['chosen_input_ids'], attention_mask=batch['chosen_attention_mask']).logits.to(torch.float32)
+            policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch['chosen_labels'], average_log_prob=False, token_level=False)
 
             losses = -policy_chosen_logps
 
