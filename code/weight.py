@@ -375,7 +375,6 @@ def process_dataset_shard(
         data_shard,
         config,
         distiller,
-        data_shard,
         mode="rejected",
         batch_size=batch_size,
         device=device,
