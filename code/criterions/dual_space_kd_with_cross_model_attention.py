@@ -127,7 +127,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        distiller.projectors["query"] = distiller.projectors.to(device)
+        distiller.projectors["query"] = distiller.projectors["query"].to(device)
         print("[DEBUG] projectors query type" ,type(distiller.projectors["query"]))
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
