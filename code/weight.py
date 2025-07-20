@@ -20,12 +20,13 @@ from typing import Dict, List, Union
 from utils.utils import pad_to_length
 from distiller import Distiller
 from omegaconf import OmegaConf
-from utils.utils import build_exp_name
+from utils.utils import build_exp_name, get_local_run_dir
 
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
+OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
 OmegaConf.register_new_resolver(
     "build_exp_name", 
     lambda loss_name, model_name, datasets, reverse_dataset, reference_model_name: 
