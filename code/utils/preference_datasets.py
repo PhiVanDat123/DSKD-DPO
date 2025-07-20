@@ -856,6 +856,8 @@ def strings_match_up_to_spaces(str_a: str, str_b: str) -> bool:
 class CustomCollate:
     def __init__(self, tokenizer: Dict):
         self.tokenizer = tokenizer
+        print("[DEBUG] Tokenizer type:", type(self.tokenizer))
+
 
     def __call__(self, batch):
         # first, pad everything to the same length
