@@ -127,6 +127,8 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
 def compute_logits(
         batch, teacher_model, mode, config
     ):  
+        device = next(teacher_model.parameters()).device  # Lấy device của mô hình
+        batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         distiller = Distiller(config)
         model = distiller.student_model
         teacher_model = teacher_model
