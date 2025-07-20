@@ -196,8 +196,11 @@ def compute_logits(
         print("[DEBUG] projector weights device:", next(distiller.projectors["query"].parameters()).device)
         print("[DEBUG] Expected device:", device)
 
+        distiller.projectors["query"] = distiller.projectors["query"].to(device)
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
+
+        distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
 
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
