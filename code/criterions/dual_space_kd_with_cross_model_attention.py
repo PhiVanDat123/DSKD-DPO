@@ -63,21 +63,21 @@ class DualSpaceKDWithCMA(VariousDivergence):
         self, concat_student_data, concat_teacher_data, distiller
     ):  
         device = next(distiller.teacher_model.parameters()).device  # Lấy device của mô hình
-        batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
+        #batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         self.distiller = distiller
         model = distiller.student_model.to(device)
         teacher_model = distiller.teacher_model.to(device)
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
-                concat_teacher_data["concatenated_teacher_input_ids"],
-                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"],
+                concat_teacher_data["concatenated_teacher_input_ids"].to(device),
+                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"].to(device),
                 #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
         #concat_output_data = concatenated_inputs(output_data)
-        target = concat_student_data["concatenated_student_labels"]
-        teacher_target = concat_teacher_data["concatenated_teacher_labels"]
+        target = concat_student_data["concatenated_student_labels"].to(device)
+        teacher_target = concat_teacher_data["concatenated_teacher_labels"].to(device)
         
         pad_mask = target.ne(self.padding_id).to(device)
         teacher_pad_mask = teacher_target.ne(self.padding_id).to(device)
@@ -111,12 +111,12 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
-        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target)).to(device)
+        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
         stu_input_embeds = stu_embed_tokens(formal_input).detach().to(device)   
         stu_target_embeds = stu_embed_tokens(formal_target).detach().to(device)
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
-        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target)).to(device)
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"].to(device), torch.zeros_like(teacher_target)).to(device)
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach().to(device)
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach().to(device)
 
