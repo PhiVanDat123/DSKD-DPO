@@ -20,6 +20,6 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   eval_every=5 \
   policy_mode=student \
   datasets=tonyshelby/ultra-feedback_new_v1 \
-  gradient_accumulation_steps=2 batch_size=4 eval_batch_size=4 \
+  gradient_accumulation_steps=4 batch_size=2 eval_batch_size=4 \
   trainer=FSDPTrainer sample_during_eval=false \
   debug=false \
