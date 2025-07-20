@@ -15,6 +15,7 @@ num_gpus=2
 force_sequential=true  # Set to true if multiprocessing causes issues
 split="train"
 
+echo "[DEBUG] script running:"
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
