@@ -485,8 +485,8 @@ def parallel_process_file(file_path, config):
                     args=(
                         i % available_gpus,
                         file_path,
-                        config.model_name_1,
-                        config.model_name_2,
+                        config.positive_model_name,
+                        config.negative_model_name,
                         shards[i],
                         config,
                         distiller,
