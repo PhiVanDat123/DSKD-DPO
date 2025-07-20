@@ -162,16 +162,16 @@ def compute_logits(
         else:
             raise NotImplementedError
 
-        if hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "model") \
-            and hasattr(distiller.teacher_model.model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "transformer") \
-            and hasattr(distiller.teacher_model.model, "wte"):
-            tea_embed_tokens = distiller.teacher_model.transformer.wte
+        if hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.embed_tokens
+        elif hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "model") \
+            and hasattr(teacher_model.model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.model.embed_tokens
+        elif hasattr(teacher_model, "transformer") \
+            and hasattr(teacher_model.model, "wte"):
+            tea_embed_tokens = teacher_model.transformer.wte
         else:
             raise NotImplementedError
 
