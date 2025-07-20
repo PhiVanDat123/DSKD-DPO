@@ -14,31 +14,124 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.preference_datasets import get_collate_fn
 from utils.distill_datasets import DistillDataset
-from trainers import concatenated_inputs
+from distiller import Distiller
+from typing import Dict, List, Union
+from utils.utils import pad_to_length
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
-def compute_dual_space_kd_loss_with_cma(
-        self, concat_student_data, concat_teacher_data, distiller
+
+def fast_pad_tensor(input_tensor, max_token, max_span, pad_value=-1):
+    batch_size, token_size, span_size = input_tensor.shape
+
+    # Create the output tensor filled with pad_value
+    output = input_tensor.new_full((batch_size, max_token, max_span), pad_value)
+
+    # Copy the original values into the top-left part
+    output[:, :token_size, :span_size] = input_tensor
+
+    return output
+
+def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
+    """Concatenate the chosen and rejected inputs into a single tensor.
+
+    Args:
+        batch: A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids', which are tensors of shape (batch_size, sequence_length).
+
+    Returns:
+        A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
+    """
+    ''''''
+    max_length = max(
+        batch[f"chosen_{mode}_input_ids"].shape[1], batch[f"rejected_{mode}_input_ids"].shape[1]
+    )
+    max_num_parents = max(
+        batch[f"chosen_{mode}_parent_list"].shape[1], batch[f"rejected_{mode}_parent_list"].shape[1]
+    )
+    max_span = max(
+        batch[f"chosen_{mode}_parent_list"].shape[2], batch[f"rejected_{mode}_parent_list"].shape[2]
+    )
+    concatenated_batch = {}
+    #keys = [k for k in batch if mode in k]
+    #keys.extend([k for k in batch if "weight" in k])
+    keys = [k for k in batch if k.startswith(f"chosen_{mode}") or k.startswith(f"rejected_{mode}")]
+    for k in keys:
+        # if k.startswith("chosen") and isinstance(batch[k], torch.Tensor):
+        if k.startswith(f"chosen_{mode}"):
+            pad_value = -100 if "labels" in k else 0
+            concatenated_key = k.replace("chosen", "concatenated")
+            if "weight" in k:
+                # print(k)
+                # print(concatenated_key)
+                concatenated_batch[concatenated_key] = pad_to_length(
+                    batch[k], max_num_parents, pad_value=pad_value
+                )
+            elif "parent_list" in k:
+                concatenated_batch[concatenated_key] = fast_pad_tensor(
+                    batch[k], max_num_parents, max_span, pad_value=-1
+                )
+            elif ("parent_dict" in k) or ("offset_mapping" in k):
+                concatenated_batch[concatenated_key] = batch[k]
+            else:
+                # print(k)
+                # print(type(batch[k]))
+                concatenated_batch[concatenated_key] = pad_to_length(
+                    batch[k], max_length, pad_value=pad_value
+                )
+    for k in keys:
+        # if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
+        if k.startswith(f"rejected_{mode}"):
+            pad_value = -100 if "labels" in k else 0
+            concatenated_key = k.replace("rejected", "concatenated")
+            if "weight" in k:
+                concatenated_batch[concatenated_key] = torch.cat(
+                    (
+                        concatenated_batch[concatenated_key],
+                        pad_to_length(batch[k], max_num_parents, pad_value=pad_value),
+                    ),
+                    dim=0,
+                )
+            elif "parent_list" in k:
+                concatenated_batch[concatenated_key] = torch.cat(
+                    (
+                        concatenated_batch[concatenated_key],
+                        fast_pad_tensor(batch[k], max_num_parents, max_span, pad_value=-1),
+                    ),
+                    dim=0,
+                )
+            elif ("parent_dict" in k) or ("offset_mapping" in k):
+                concatenated_batch[concatenated_key] += batch[k]
+            else:
+                concatenated_batch[concatenated_key] = torch.cat(
+                    (
+                        concatenated_batch[concatenated_key],
+                        pad_to_length(batch[k], max_length, pad_value=pad_value),
+                    ),
+                    dim=0,
+                )
+    return concatenated_batch
+
+def compute_logits(
+        batch, teacher_model, mode, config
     ):  
-        self.distiller = distiller
+        distiller = Distiller(config)
         model = distiller.student_model
-        teacher_model = distiller.teacher_model
+        teacher_model = teacher_model
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
-                concat_teacher_data["concatenated_teacher_input_ids"],
-                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"],
+                batch[f"{mode}_teacher_input_ids"],
+                attention_mask=batch[f"{mode}_teacher_attention_mask"],
                 #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
         #concat_output_data = concatenated_inputs(output_data)
-        target = concat_student_data["concatenated_student_labels"]
-        teacher_target = concat_teacher_data["concatenated_teacher_labels"]
+        target = batch[f"{mode}_student_labels"]
+        teacher_target = batch[f"{mode}_teacher_labels"]
         
-        pad_mask = target.ne(self.padding_id)
-        teacher_pad_mask = teacher_target.ne(self.padding_id)
+        pad_mask = target.ne(-100)
+        teacher_pad_mask = teacher_target.ne(-100)
 
         teacher_hiddens = teacher_outputs.hidden_states[-1]
 
@@ -69,12 +162,12 @@ def compute_dual_space_kd_loss_with_cma(
             raise NotImplementedError
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target))
+        formal_input = torch.where(pad_mask, batch[f"{mode}_student_input_ids"], torch.zeros_like(target))
         stu_input_embeds = stu_embed_tokens(formal_input).detach()
         stu_target_embeds = stu_embed_tokens(formal_target).detach()
 
         formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target))
+        formal_teacher_input = torch.where(teacher_pad_mask, batch[f"{mode}_teacher_input_ids"], torch.zeros_like(teacher_target))
         tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
         tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
 
@@ -127,13 +220,15 @@ def token_weight(
         device = next(positive_model.parameters()).device
     # Create a descriptive prefix for the progress bar
     desc = f"GPU-{process_id}" if process_id is not None else "Processing"
-
+    
+    '''
     dataset = DistillDataset(
         config=config,
         split="train",  # hoặc "dev", "test"
         student_tokenizer=...,   # instance của tokenizer student
         teacher_tokenizers={"mistral": tokenizer}  # teacher model name map → tokenizer
     )  
+    '''
 
     collate_fn = get_collate_fn(tokenizer)
     '''
@@ -147,10 +242,10 @@ def token_weight(
     )
     '''
     dataloader = DataLoader(
-        dataset,
+        samples,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=dataset.collate,  # <- dùng hàm collate đã xử lý đầy đủ teacher/student
+        collate_fn=collate_fn,  # <- dùng hàm collate đã xử lý đầy đủ teacher/student
         num_workers=2,
         pin_memory=True,
     )
@@ -159,7 +254,7 @@ def token_weight(
 
     # input_ids = [list(chain.from_iterable(d.values())) for d in sample['tea']]
 
-    for model_data, no_model_data, gen_data in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
+    for batch in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
         # input_ids = samples[f"{mode}_teacher_input_ids"][i : i + batch_size]
         # input_ids_list = [torch.tensor(i) for i in input_ids]
         # input_ids_tensor = pad_sequence(
@@ -169,13 +264,14 @@ def token_weight(
         # attention_mask = samples[f"{mode}_teacher_attention_mask"][i : i + batch_size]
         # attention_mask_list = [torch.tensor(i) for i in attention_mask]
         # attention_mask_tensor = pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
-        logits_1 = compute_dual_space_kd_loss_with_cma(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=positive_model)
-        logits_2 = compute_dual_space_kd_loss_with_cma(input_data=model_data["input_batch"], output_data = model_data["output_batch"], distiller=distiller, teacher_model=negative_model)
+
+        logits_1 = compute_logits(batch, positive_model, mode, config)
+        logits_2 = compute_logits(batch, negative_model, mode, config)
 
         logits_1 = torch.log_softmax(logits_1, dim=-1).cpu()
         logits_2 = torch.log_softmax(logits_2, dim=-1).cpu()
 
-        labels = no_model_data[f"teacher_{mode}_label"].cpu()
+        labels = batch[f"{mode}_teacher_labels"].cpu()
 
         no_prompt_logits_1, no_prompt_labels = prompt_remove(logits_1, labels)
         no_prompt_logits_2, _ = prompt_remove(logits_2, labels)
@@ -206,10 +302,10 @@ def token_weight(
         # ]  # since each dict is a string
 
         token_logps_1 = get_token_logps(
-            no_prompt_logits_1, no_prompt_labels, model_data[f"{mode}_teacher_parent_list"]
+            no_prompt_logits_1, no_prompt_labels
         )
         token_logps_2 = get_token_logps(
-            no_prompt_logits_2, no_prompt_labels, model_data[f"{mode}_teacher_parent_list"]
+            no_prompt_logits_2, no_prompt_labels
         )
 
         weights = torch.clamp(token_logps_1 - token_logps_2, L, U)
