@@ -384,6 +384,28 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     ),
                     dim=0,
                 )
+
+    weight_keys = [k for k in batch if k.startswith(f"chosen") or k.startswith(f"rejected")]
+    for k in weight_keys:
+        if k.startswith(f"chosen"):
+            pad_value = -100 if "labels" in k else 0
+            concatenated_key = k.replace("chosen", "concatenated")
+            if "weight" in k:
+                # print(k)
+                # print(concatenated_key)
+                concatenated_batch[concatenated_key] = pad_to_length(
+                    batch[k], max_num_parents, pad_value=pad_value
+                )
+    for k in weight_keys:
+        if k.startswith(f"rejected"):
+            pad_value = -100 if "labels" in k else 0
+            concatenated_key = k.replace("rejected", "concatenated")
+            if "weight" in k:
+                # print(k)
+                # print(concatenated_key)
+                concatenated_batch[concatenated_key] = pad_to_length(
+                    batch[k], max_num_parents, pad_value=pad_value
+                )
     return concatenated_batch
 
 def load_tokenizer(self, model_type, path):
