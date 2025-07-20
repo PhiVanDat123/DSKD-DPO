@@ -566,7 +566,8 @@ def main():
     # all_files = [
     #     os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if f.endswith(".jsonl")
     # ]
-    file_path = args.data_path.split("/")[-1]
+    #file_path = args.data_path.split("/")[-1]
+    file_path = args.data_path
     processed_files = []
     # for file_path in all_files:
     output_dir = parallel_process_file(file_path, args)
