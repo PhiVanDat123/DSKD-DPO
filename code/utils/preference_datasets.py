@@ -879,7 +879,7 @@ class CustomCollate:
                         to_pad = [torch.LongTensor(ex[k]) for ex in batch]
                 if k.endswith("_input_ids"):
                     if "teacher" in k:
-                        padding_value = self.tokenizer["teacher"].eos_token_id
+                        padding_value = self.tokenizer.eos_token_id
                     else:
                         padding_value = self.tokenizer.eos_token_id
                 elif k.endswith("_labels"):
