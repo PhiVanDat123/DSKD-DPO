@@ -265,7 +265,7 @@ def token_weight(
 
     # input_ids = [list(chain.from_iterable(d.values())) for d in sample['tea']]
 
-    for batch in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
+    for batch in dataloader:
         # input_ids = samples[f"{mode}_teacher_input_ids"][i : i + batch_size]
         # input_ids_list = [torch.tensor(i) for i in input_ids]
         # input_ids_tensor = pad_sequence(
