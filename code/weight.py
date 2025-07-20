@@ -129,10 +129,7 @@ def compute_logits(
     ):  
         device = next(teacher_model.parameters()).device  # Lấy device của mô hình
         batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
-        #distiller = Distiller(config).to(device)
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        distiller = Distiller(config).to(device)  # không gọi .half() nếu chưa chắc chắn
+        distiller = Distiller(config)
         model = distiller.student_model.to(device)
         teacher_model = teacher_model.to(device)
         with torch.no_grad():
