@@ -20,11 +20,17 @@ from typing import Dict, List, Union
 from utils.utils import pad_to_length
 from distiller import Distiller
 from omegaconf import OmegaConf
+from utils.utils import build_exp_name
 
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
+OmegaConf.register_new_resolver(
+    "build_exp_name", 
+    lambda loss_name, model_name, datasets, reverse_dataset, reference_model_name: 
+        build_exp_name(loss_name, model_name, datasets, reverse_dataset, reference_model_name)
+)
 
 def fast_pad_tensor(input_tensor, max_token, max_span, pad_value=-1):
     batch_size, token_size, span_size = input_tensor.shape
