@@ -208,7 +208,7 @@ def compute_logits(
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         t2s_logits = t2s_hiddens.matmul(
             distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
-        )
+        ).to(device)
         
         return t2s_logits, target
 
