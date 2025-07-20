@@ -4,6 +4,7 @@ import multiprocessing as mp
 import os
 import time
 import math
+import hydra
 
 import torch
 import tqdm
@@ -17,6 +18,9 @@ from utils.distill_datasets import DistillDataset
 from distiller import Distiller
 from typing import Dict, List, Union
 from utils.utils import pad_to_length
+from distiller import Distiller
+from omegaconf import OmegaConf
+
 
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
@@ -376,6 +380,8 @@ def process_dataset_shard(
         model_2,
         tokenizer,
         data_shard,
+        config,
+        distiller,
         mode="chosen",
         batch_size=batch_size,
         device=device,
@@ -416,7 +422,8 @@ def get_output_file(output_dir, file_path):
     return output_file
 
 
-def parallel_process_file(file_path, args):
+def parallel_process_file(file_path, args, config):
+    distiller = Distiller(config)
     print(f"Processing file: {file_path}")
     # data = load_jsonl(file_path)
 
@@ -453,6 +460,8 @@ def parallel_process_file(file_path, args):
                 args.positive_model_name,
                 args.negative_model_name,
                 shards[i],
+                config,
+                distiller,
                 args.batch_size,
             )
             results.append(result)
@@ -472,6 +481,8 @@ def parallel_process_file(file_path, args):
                         args.model_name_1,
                         args.model_name_2,
                         shards[i],
+                        config,
+                        distiller,
                         args.batch_size,
                     ),
                 )
@@ -499,8 +510,9 @@ def parallel_process_file(file_path, args):
 
     return output_dir
 
-
-def main():
+@hydra.main(version_base=None, config_path=None, config_name="config")
+def main(config):
+    OmegaConf.resolve(config)
     print("[DEBUG] main started")
     # Try setting multiprocessing start method to spawn for better CUDA compatibility
     try:
@@ -575,7 +587,7 @@ def main():
     file_path = args.data_path
     processed_files = []
     # for file_path in all_files:
-    output_dir = parallel_process_file(file_path, args)
+    output_dir = parallel_process_file(file_path, args, config)
     processed_files.append(output_dir)
 
     elapsed_time = time.time() - start_time
