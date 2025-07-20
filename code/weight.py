@@ -132,7 +132,7 @@ def compute_logits(
         #distiller = Distiller(config).to(device)
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
-        distiller = Distiller(config).half().to(device)
+        distiller = Distiller(config).to(device)  # không gọi .half() nếu chưa chắc chắn
         model = distiller.student_model.to(device)
         teacher_model = teacher_model.to(device)
         with torch.no_grad():
