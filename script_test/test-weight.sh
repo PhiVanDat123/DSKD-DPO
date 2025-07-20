@@ -26,5 +26,6 @@ ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   output_dir=$output_dir \
   batch_size=$batch_size \
   num_gpus=$num_gpus \
-  $( [ "$force_sequential" = true ] && echo "--force_sequential" )
+  force_sequential=$force_sequential
+
 
