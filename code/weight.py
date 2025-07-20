@@ -445,8 +445,8 @@ def parallel_process_file(file_path, args):
             result = process_dataset_shard(
                 i % available_gpus,
                 file_path,
-                args.model_name_1,
-                args.model_name_2,
+                args.positive_model_name,
+                args.negative_model_name,
                 shards[i],
                 args.batch_size,
             )
