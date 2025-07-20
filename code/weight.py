@@ -7,7 +7,7 @@ import math
 import hydra
 
 import torch
-import tqdm
+from tqdm import tqdm
 from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import login
 from utils.loss_utils import get_token_logps, prompt_remove
