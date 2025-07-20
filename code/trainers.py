@@ -614,7 +614,7 @@ class BasicTrainer(object):
             chosen_logps, rejected_logps
 
 
-    def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, train=True):
+    def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, mode, train=True):
         """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
         #print("[trainers] Batch content:", batch)
         metrics = {}
@@ -677,7 +677,7 @@ class BasicTrainer(object):
         #    metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
         elif loss_config.name == 'tisdpo':
             chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, policy_chosen_logps, policy_rejected_logps\
-                = self.tisdpo_concatenated_forward(self.policy, self.reference_model, batch)
+                = self.tisdpo_concatenated_forward(self.policy, self.reference_model, batch, self.distiller, self.config, mode)
             losses, chosen_rewards, rejected_rewards = tisdpo_loss(chosen_logps_margin, rejected_logps_margin,
                                                                  chosen_position_kl, rejected_position_kl,
                                                                  beta=loss_config.beta, alpha=loss_config.alpha, token_level=loss_config.token_level)
@@ -888,7 +888,7 @@ class BasicTrainer(object):
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
                     #print("[eval] Local eval batch content:", local_eval_batch)
                     with torch.no_grad():
-                        _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False)
+                        _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, mode="student", train=False)
 
                     for k, v in eval_metrics.items():
                         all_eval_metrics[k].extend(v)
@@ -976,6 +976,7 @@ class BasicTrainer(object):
                 loss, metrics = self.get_batch_metrics(
                     local_microbatch,
                     self.config.loss,
+                    mode="student",
                     train=True
                 )
                 (loss / self.config.gradient_accumulation_steps).backward()
