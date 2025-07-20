@@ -496,6 +496,7 @@ def parallel_process_file(file_path, args):
 
 
 def main():
+    print("[DEBUG] main started")
     # Try setting multiprocessing start method to spawn for better CUDA compatibility
     try:
         mp.set_start_method("spawn")
@@ -568,7 +569,9 @@ def main():
     file_path = args.data_path.split("/")[-1]
     processed_files = []
     # for file_path in all_files:
+    print("[DEBUG] before parallel_process_file")
     output_dir = parallel_process_file(file_path, args)
+    print("[DEBUG] after parallel_process_file")
     processed_files.append(output_dir)
 
     elapsed_time = time.time() - start_time
