@@ -554,6 +554,7 @@ class BasicTrainer(object):
         rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:]
         return chosen_logps, rejected_logps
     
+    
     def tisdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
                                   batch: Dict[str, Union[List, torch.LongTensor]], distiller, config, mode):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
@@ -574,13 +575,13 @@ class BasicTrainer(object):
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_{mode}_weight'], average_log_prob=False)
 
-        chosen_logps_margin = all_logps_margin[:batch['chosen_input_ids'].shape[0]]
-        rejected_logps_margin = all_logps_margin[batch['chosen_input_ids'].shape[0]:]
-        chosen_position_kl = all_position_kl[:batch['chosen_input_ids'].shape[0]]
-        rejected_position_kl = all_position_kl[batch['chosen_input_ids'].shape[0]:]
+        chosen_logps_margin = all_logps_margin[:batch['chosen_{mode}_input_ids'].shape[0]]
+        rejected_logps_margin = all_logps_margin[batch['chosen_{mode}_input_ids'].shape[0]:]
+        chosen_position_kl = all_position_kl[:batch['chosen_{mode}_input_ids'].shape[0]]
+        rejected_position_kl = all_position_kl[batch['chosen_{mode}_input_ids'].shape[0]:]
 
-        chosen_logps = all_logps[:batch['chosen_input_ids'].shape[0]].detach()
-        rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:].detach()
+        chosen_logps = all_logps[:batch['chosen_{mode}_input_ids'].shape[0]].detach()
+        rejected_logps = all_logps[batch['chosen_{mode}_input_ids'].shape[0]:].detach()
 
         return chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, \
             chosen_logps, rejected_logps
