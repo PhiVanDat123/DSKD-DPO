@@ -21,16 +21,6 @@ from utils.utils import pad_to_length
 # Replace 'your_token_here' with the token you got from Hugging Face
 #login(token=".....")
 
-import logging
-
-# Cấu hình logging
-logging.basicConfig(
-    filename='log.txt',              # Tên file log
-    filemode='w',                    # Ghi đè mỗi lần chạy. Dùng 'a' để nối tiếp nếu cần
-    level=logging.INFO,              # Mức độ log (DEBUG, INFO, WARNING, ERROR)
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger()
 
 def fast_pad_tensor(input_tensor, max_token, max_span, pad_value=-1):
     batch_size, token_size, span_size = input_tensor.shape
@@ -349,8 +339,7 @@ def process_dataset_shard(
 ):
     # Set the GPU device - directly select device instead of using environment variable
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
-    #print(f"Process using device: {device}")
-    logger.info(f"Process using device: {device}")
+    print(f"Process using device: {device}")
 
     # Load models and tokenizer for this process
     tokenizer = AutoTokenizer.from_pretrained(positive_model)
@@ -363,8 +352,7 @@ def process_dataset_shard(
     model_1 = AutoModelForCausalLM.from_pretrained(positive_model).to(device)
     model_2 = AutoModelForCausalLM.from_pretrained(negative_model).to(device)
 
-    #print(f"GPU {gpu_id}: Processing {len(data_shard)} examples")
-    logger.info(f"GPU {gpu_id}: Processing {len(data_shard)} examples")
+    print(f"GPU {gpu_id}: Processing {len(data_shard)} examples")
 
     # Pass the device and process ID to calculate_probability_differences
     rejected_weights = token_weight(
@@ -424,8 +412,7 @@ def get_output_file(output_dir, file_path):
 
 
 def parallel_process_file(file_path, args):
-    #print(f"Processing file: {file_path}")
-    logger.info(f"Processing file: {file_path}")
+    print(f"Processing file: {file_path}")
     # data = load_jsonl(file_path)
 
     data = load_dataset(file_path, split=args.split)
@@ -436,8 +423,7 @@ def parallel_process_file(file_path, args):
     if num_gpus == 0:
         raise RuntimeError("No GPU devices found")
 
-    #print(f"Using {num_gpus} GPUs for parallel processing (available: {available_gpus})")
-    logger.info(f"Using {num_gpus} GPUs for parallel processing (available: {available_gpus})")
+    print(f"Using {num_gpus} GPUs for parallel processing (available: {available_gpus})")
 
     # Split data into approximately equal shards
     shards = []
@@ -448,14 +434,12 @@ def parallel_process_file(file_path, args):
         # shards.append(data[i : i + shard_size])
 
     shards = shards[:num_gpus]  # Make sure we don't have more shards than GPUs
-    #print(f"Split data into {len(shards)} shards")
-    logger.info(f"Split data into {len(shards)} shards")
+    print(f"Split data into {len(shards)} shards")
 
     # Force sequential or handle single shard case
     if args.force_sequential or len(shards) == 1:
         # Sequential processing
-        #print("Using sequential processing")
-        logger.info("Using sequential processing")
+        print("Using sequential processing")
         results = []
         for i in range(len(shards)):
             result = process_dataset_shard(
@@ -470,8 +454,7 @@ def parallel_process_file(file_path, args):
         processed_shards = results
     else:
         # Process shards in parallel
-        #print("Using parallel processing with multiprocessing Pool")
-        logger.info("Using parallel processing with multiprocessing Pool")
+        print("Using parallel processing with multiprocessing Pool")
         with mp.Pool(num_gpus) as pool:
             # Start workers with respective GPU IDs and data shards
             results = []
@@ -500,29 +483,25 @@ def parallel_process_file(file_path, args):
 
     # save to HF
     processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=args.split)
-    #print("Saved processed data to HF")
-    logger.info("Saved processed data to HF")
+    print("Saved processed data to HF")
     # Save combined results
     # output_file = get_output_file(args.output_dir, file_path)
     output_dir = os.path.join(args.output_dir, file_path, args.split)
     os.makedirs(output_dir, exist_ok=True)
     processed_data.save_to_disk(output_dir)
     # save_jsonl(processed_data, output_file)
-    #print(f"Saved processed data to {output_dir}")
-    logger.info(f"Saved processed data to {output_dir}")
+    print(f"Saved processed data to {output_dir}")
 
     return output_dir
 
 
 def main():
-    #print("[DEBUG] main started")
-    logger.info("[DEBUG] main started")
+    print("[DEBUG] main started")
     # Try setting multiprocessing start method to spawn for better CUDA compatibility
     try:
         mp.set_start_method("spawn")
     except RuntimeError:
-        #print("Multiprocessing start method already set, continuing with existing method")
-        logger.info("Multiprocessing start method already set, continuing with existing method")
+        print("Multiprocessing start method already set, continuing with existing method")
 
     parser = argparse.ArgumentParser(description="Process dataset with models in parallel.")
     parser.add_argument(
@@ -573,15 +552,11 @@ def main():
 
     # Verify GPU availability
     available_gpus = torch.cuda.device_count()
-    #print(f"Found {available_gpus} available GPUs")
-    logger.info(f"Found {available_gpus} available GPUs")
+    print(f"Found {available_gpus} available GPUs")
     if available_gpus == 0:
         raise RuntimeError("No GPU devices available, but GPUs are required for this script")
     if args.num_gpus > available_gpus:
-        #print(
-        #    f"Warning: Requested {args.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
-        #)
-        logger.info(
+        print(
             f"Warning: Requested {args.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
         )
         args.num_gpus = available_gpus
@@ -594,18 +569,15 @@ def main():
     file_path = args.data_path.split("/")[-1]
     processed_files = []
     # for file_path in all_files:
-    #print("[DEBUG] before parallel_process_file")
-    logger.info("[DEBUG] before parallel_process_file")
     output_dir = parallel_process_file(file_path, args)
-    #print("[DEBUG] after parallel_process_file")
-    logger.info("[DEBUG] after parallel_process_file")
     processed_files.append(output_dir)
 
     elapsed_time = time.time() - start_time
-    #print(f"Finished processing all files in {elapsed_time:.2f} seconds")
-    logger.info(f"Finished processing all files in {elapsed_time:.2f} seconds")
-    #print("Processed dirs:")
-    logger.info("Processed dirs:")
+    print(f"Finished processing all files in {elapsed_time:.2f} seconds")
+    print("Processed dirs:")
     for file in processed_files:
-        #print(f"  {file}")
-        logger.info(f"  {file}")
+        print(f"  {file}")
+
+
+if __name__ == "__main__":
+    main()
