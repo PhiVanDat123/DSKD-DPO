@@ -573,7 +573,7 @@ class BasicTrainer(object):
         
             reference_all_logits = compute_t2s_logits(self, distiller, config, concatenated_batch, teacher_concatenated_batch)
 
-        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_{mode}_weight'], average_log_prob=False)
+        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
 
         chosen_logps_margin = all_logps_margin[:batch['chosen_{mode}_input_ids'].shape[0]]
         rejected_logps_margin = all_logps_margin[batch['chosen_{mode}_input_ids'].shape[0]:]
