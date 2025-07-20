@@ -62,7 +62,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
     def compute_dual_space_kd_loss_with_cma(
         self, concat_student_data, concat_teacher_data, distiller
     ):  
-        device = next(teacher_model.parameters()).device  # Lấy device của mô hình
+        device = next(distiller.teacher_model.parameters()).device  # Lấy device của mô hình
         batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         self.distiller = distiller
         model = distiller.student_model.to(device)
