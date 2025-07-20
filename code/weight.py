@@ -422,16 +422,16 @@ def get_output_file(output_dir, file_path):
     return output_file
 
 
-def parallel_process_file(file_path, args, config):
+def parallel_process_file(file_path, config):
     distiller = Distiller(config)
     print(f"Processing file: {file_path}")
     # data = load_jsonl(file_path)
 
-    data = load_dataset(file_path, split=args.split)
+    data = load_dataset(file_path, split=config.split)
 
     # Determine number of GPUs to use
     available_gpus = torch.cuda.device_count()
-    num_gpus = min(args.num_gpus, available_gpus)
+    num_gpus = min(config.num_gpus, available_gpus)
     if num_gpus == 0:
         raise RuntimeError("No GPU devices found")
 
@@ -449,7 +449,7 @@ def parallel_process_file(file_path, args, config):
     print(f"Split data into {len(shards)} shards")
 
     # Force sequential or handle single shard case
-    if args.force_sequential or len(shards) == 1:
+    if config.force_sequential or len(shards) == 1:
         # Sequential processing
         print("Using sequential processing")
         results = []
@@ -457,12 +457,12 @@ def parallel_process_file(file_path, args, config):
             result = process_dataset_shard(
                 i % available_gpus,
                 file_path,
-                args.positive_model_name,
-                args.negative_model_name,
+                config.positive_model_name,
+                config.negative_model_name,
                 shards[i],
                 config,
                 distiller,
-                args.batch_size,
+                config.batch_size,
             )
             results.append(result)
         processed_shards = results
@@ -478,12 +478,12 @@ def parallel_process_file(file_path, args, config):
                     args=(
                         i % available_gpus,
                         file_path,
-                        args.model_name_1,
-                        args.model_name_2,
+                        config.model_name_1,
+                        config.model_name_2,
                         shards[i],
                         config,
                         distiller,
-                        args.batch_size,
+                        config.batch_size,
                     ),
                 )
                 results.append(result)
@@ -498,11 +498,11 @@ def parallel_process_file(file_path, args, config):
     processed_data = concatenate_datasets(processed_shards)
 
     # save to HF
-    processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=args.split)
+    processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=config.split)
     print("Saved processed data to HF")
     # Save combined results
     # output_file = get_output_file(args.output_dir, file_path)
-    output_dir = os.path.join(args.output_dir, file_path, args.split)
+    output_dir = os.path.join(config.output_dir, file_path, config.split)
     os.makedirs(output_dir, exist_ok=True)
     processed_data.save_to_disk(output_dir)
     # save_jsonl(processed_data, output_file)
@@ -520,6 +520,7 @@ def main(config):
     except RuntimeError:
         print("Multiprocessing start method already set, continuing with existing method")
 
+    '''
     parser = argparse.ArgumentParser(description="Process dataset with models in parallel.")
     parser.add_argument(
         "--positive_model_name", type=str, required=True, help="Path to the first model."
@@ -564,30 +565,30 @@ def main(config):
         action="store_true",
         help="Force sequential processing even with multiple GPUs.",
     )
-
-    args = parser.parse_args()
-
+    '''
+    
     # Verify GPU availability
     available_gpus = torch.cuda.device_count()
     print(f"Found {available_gpus} available GPUs")
     if available_gpus == 0:
         raise RuntimeError("No GPU devices available, but GPUs are required for this script")
-    if args.num_gpus > available_gpus:
+    if config.num_gpus > available_gpus:
         print(
-            f"Warning: Requested {args.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
+            f"Warning: Requested {config.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
         )
-        args.num_gpus = available_gpus
+        config.num_gpus = available_gpus
 
     # Process all files in the input directory
     start_time = time.time()
     # all_files = [
-    #     os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if f.endswith(".jsonl")
+    #     os.path.join(
+    # .input_dir, f) for f in os.listdir(args.input_dir) if f.endswith(".jsonl")
     # ]
     #file_path = args.data_path.split("/")[-1]
-    file_path = args.data_path
+    file_path = config.data_path
     processed_files = []
     # for file_path in all_files:
-    output_dir = parallel_process_file(file_path, args, config)
+    output_dir = parallel_process_file(file_path, config)
     processed_files.append(output_dir)
 
     elapsed_time = time.time() - start_time

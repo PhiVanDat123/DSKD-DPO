@@ -142,6 +142,15 @@ projector_path: None
 
 projector_warmup_steps: 1000
 
+#weights
+split: "train"
+num_gpus: 2
+force_sequential: false
+positive_model_name: "tonyshelby/Qwen2.5_0.5B_SFT_sample"
+negative_model_name: "openai-community/gpt2"
+output_dir: "generated-data/ultra-feedback-tisdpo"
+data_path: "tonyshelby/ultra-feedback_checking"
+
 defaults:
 - _self_
 - model: sft # basic model configuration
