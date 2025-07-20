@@ -62,9 +62,11 @@ class DualSpaceKDWithCMA(VariousDivergence):
     def compute_dual_space_kd_loss_with_cma(
         self, concat_student_data, concat_teacher_data, distiller
     ):  
+        device = next(teacher_model.parameters()).device  # Lấy device của mô hình
+        batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         self.distiller = distiller
-        model = distiller.student_model
-        teacher_model = distiller.teacher_model
+        model = distiller.student_model.to(device)
+        teacher_model = distiller.teacher_model.to(device)
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
@@ -77,10 +79,10 @@ class DualSpaceKDWithCMA(VariousDivergence):
         target = concat_student_data["concatenated_student_labels"]
         teacher_target = concat_teacher_data["concatenated_teacher_labels"]
         
-        pad_mask = target.ne(self.padding_id)
-        teacher_pad_mask = teacher_target.ne(self.padding_id)
+        pad_mask = target.ne(self.padding_id).to(device)
+        teacher_pad_mask = teacher_target.ne(self.padding_id).to(device)
 
-        teacher_hiddens = teacher_outputs.hidden_states[-1]
+        teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
 
         if hasattr(distiller.student_model, "model") \
             and hasattr(distiller.student_model.model, "embed_tokens"):
@@ -108,29 +110,31 @@ class DualSpaceKDWithCMA(VariousDivergence):
         else:
             raise NotImplementedError
 
-        formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target))
-        stu_input_embeds = stu_embed_tokens(formal_input).detach()
-        stu_target_embeds = stu_embed_tokens(formal_target).detach()
+        formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
+        formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"], torch.zeros_like(target)).to(device)
+        stu_input_embeds = stu_embed_tokens(formal_input).detach().to(device)   
+        stu_target_embeds = stu_embed_tokens(formal_target).detach().to(device)
 
-        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target))
-        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
-        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
+        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
+        formal_teacher_input = torch.where(teacher_pad_mask, concat_teacher_data[f"concatenated_teacher_input_ids"], torch.zeros_like(teacher_target)).to(device)
+        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach().to(device)
+        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach().to(device)
 
-        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1)
-        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1)
+        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1).to(device)
+        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1).to(device)
 
         norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float()
-        tea_k_hiddens = norm_tea_index_embeds.float()
+        distiller.projectors["query"] = distiller.projectors.to(device)
+        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
+        tea_k_hiddens = norm_tea_index_embeds.float().to(device)
 
+        distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
-        ).float()
+        ).float().to(device)
         
         align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
@@ -140,7 +144,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         t2s_logits = t2s_hiddens.matmul(
-            distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
-        )
+            distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
+        ).to(device)
         
         return t2s_logits, target
