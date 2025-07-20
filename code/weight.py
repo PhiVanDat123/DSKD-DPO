@@ -129,9 +129,9 @@ def compute_logits(
     ):  
         device = next(teacher_model.parameters()).device  # Lấy device của mô hình
         batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
-        distiller = Distiller(config)
-        model = distiller.student_model
-        teacher_model = teacher_model
+        distiller = Distiller(config).to(device)
+        model = distiller.student_model.to(device)
+        teacher_model = teacher_model.to(device)
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
@@ -144,10 +144,10 @@ def compute_logits(
         target = batch[f"{mode}_student_labels"]
         teacher_target = batch[f"{mode}_teacher_labels"]
         
-        pad_mask = target.ne(-100)
-        teacher_pad_mask = teacher_target.ne(-100)
+        pad_mask = target.ne(-100).to(device)
+        teacher_pad_mask = teacher_target.ne(-100).to(device)
 
-        teacher_hiddens = teacher_outputs.hidden_states[-1]
+        teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
 
         if hasattr(distiller.student_model, "model") \
             and hasattr(distiller.student_model.model, "embed_tokens"):
@@ -175,29 +175,29 @@ def compute_logits(
         else:
             raise NotImplementedError
 
-        formal_target = torch.where(pad_mask, target, torch.zeros_like(target))
-        formal_input = torch.where(pad_mask, batch[f"{mode}_student_input_ids"], torch.zeros_like(target))
-        stu_input_embeds = stu_embed_tokens(formal_input).detach()
-        stu_target_embeds = stu_embed_tokens(formal_target).detach()
+        formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
+        formal_input = torch.where(pad_mask, batch[f"{mode}_student_input_ids"], torch.zeros_like(target)).to(device)
+        stu_input_embeds = stu_embed_tokens(formal_input).detach().to(device)
+        stu_target_embeds = stu_embed_tokens(formal_target).detach().to(device)
 
-        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target))
-        formal_teacher_input = torch.where(teacher_pad_mask, batch[f"{mode}_teacher_input_ids"], torch.zeros_like(teacher_target))
-        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach()
-        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach()
+        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
+        formal_teacher_input = torch.where(teacher_pad_mask, batch[f"{mode}_teacher_input_ids"], torch.zeros_like(teacher_target)).to(device)
+        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach().to(device)
+        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach().to(device)
 
-        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1)
-        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1)
+        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1).to(device)
+        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1).to(device)
 
-        norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()
+        norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()   
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float()
-        tea_k_hiddens = norm_tea_index_embeds.float()
+        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
+        tea_k_hiddens = norm_tea_index_embeds.float().to(device)
 
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
-        ).float()
+        ).float().to(device)
         
         align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
@@ -207,7 +207,7 @@ def compute_logits(
         t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         t2s_logits = t2s_hiddens.matmul(
-            distiller.student_model.lm_head.weight.detach().transpose(-1, -2)
+            distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
         )
         
         return t2s_logits, target
