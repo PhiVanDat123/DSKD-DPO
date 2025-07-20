@@ -19,6 +19,7 @@ echo "[DEBUG] script running:"
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
+  --data_path $data_path \
   --split=$split \
   --input_dir $input_dir \
   --output_dir $output_dir \
