@@ -21,6 +21,7 @@ from utils.utils import pad_to_length
 from distiller import Distiller
 from omegaconf import OmegaConf
 from utils.utils import build_exp_name, get_local_run_dir
+from utils.preference_datasets import CustomCollate
 
 
 # Replace 'your_token_here' with the token you got from Hugging Face
@@ -241,7 +242,7 @@ def token_weight(
     )  
     '''
 
-    collate_fn = get_collate_fn(tokenizer)
+    collate_fn = CustomCollate(tokenizer)
     '''
     dataloader = DataLoader(
         samples,
@@ -265,7 +266,7 @@ def token_weight(
 
     # input_ids = [list(chain.from_iterable(d.values())) for d in sample['tea']]
 
-    for batch in dataloader:
+    for batch in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
         # input_ids = samples[f"{mode}_teacher_input_ids"][i : i + batch_size]
         # input_ids_list = [torch.tensor(i) for i in input_ids]
         # input_ids_tensor = pad_sequence(
