@@ -335,6 +335,8 @@ def process_dataset_shard(
     positive_model,
     negative_model,
     data_shard,
+    config,
+    distiller,
     batch_size=8,
 ):
     # Set the GPU device - directly select device instead of using environment variable
@@ -359,6 +361,9 @@ def process_dataset_shard(
         model_1,
         model_2,
         tokenizer,
+        data_shard,
+        config,
+        distiller,
         data_shard,
         mode="rejected",
         batch_size=batch_size,
