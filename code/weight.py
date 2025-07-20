@@ -192,6 +192,10 @@ def compute_logits(
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
+        print("[DEBUG] stu_index_embeds.device:", stu_index_embeds.device)
+        print("[DEBUG] projector weights device:", next(distiller.projectors["query"].parameters()).device)
+        print("[DEBUG] Expected device:", device)
+
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
 
