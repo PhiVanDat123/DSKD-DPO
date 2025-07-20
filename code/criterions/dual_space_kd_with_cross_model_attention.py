@@ -147,5 +147,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_logits = t2s_hiddens.matmul(
             distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
+        print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
         
         return t2s_logits, target

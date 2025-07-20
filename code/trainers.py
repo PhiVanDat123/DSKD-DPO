@@ -586,14 +586,16 @@ class BasicTrainer(object):
         concatenated_batch = concatenated_inputs(batch, mode)
         all_logits = model(concatenated_batch[f'concatenated_{mode}_input_ids'],
                            attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits.to(torch.float32)
+        print(f"[tisdpo_concatenated_forward] all_logits shape: {all_logits.shape}")
         teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
 
-        with torch.no_grad():
+        #with torch.no_grad():
             #reference_all_logits = reference_model(concatenated_batch['concatenated_input_ids'],
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-            reference_all_logits = compute_t2s_logits(self, distiller, config, concatenated_batch, teacher_concatenated_batch)
+        reference_all_logits = compute_t2s_logits(self, distiller, config, concatenated_batch, teacher_concatenated_batch)
+        print(f"[tisdpo_concatenated_forward] reference_all_logits shape: {reference_all_logits.shape}")
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
 
