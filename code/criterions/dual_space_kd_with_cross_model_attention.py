@@ -165,7 +165,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         align = align + (1.0 - align_mask) * (-100000)
         print("[DEBUG] align shape:", align.shape)
 
-        t2s_weight = torch.softmax(align, -1)        
+        t2s_weight = torch.softmax(align, -1) 
+        print("[DEBUG] t2s_weight shape:", t2s_weight.shape)
+        print("[DEBUG] tea_v_hiddens shape:", tea_v_hiddens.shape)       
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
         print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
