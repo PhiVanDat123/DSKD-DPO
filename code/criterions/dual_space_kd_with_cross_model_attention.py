@@ -149,6 +149,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
 
         print("projectors['t2s']:", distiller.projectors["t2s"])
+        print("(norm_teacher_hiddens + norm_tea_target_embeds).shape:", (norm_teacher_hiddens + norm_tea_target_embeds).shape)
 
         distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
         tea_v_hiddens = distiller.projectors["t2s"](
@@ -157,8 +158,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         
         print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
         print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
-        #align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
-        align = stu_q_hiddens.matmul(tea_k_hiddens.permute(2, 1, 0))
+        align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
         align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
         align = align + (1.0 - align_mask) * (-100000)
