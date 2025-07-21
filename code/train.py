@@ -18,8 +18,6 @@ import copy
 import torch.distributed as dist
 from huggingface_hub import login
 
-login("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")
-
 mp.set_start_method("fork", force=True)
 
 os.environ["WANDB_SILENT"] = "true"
