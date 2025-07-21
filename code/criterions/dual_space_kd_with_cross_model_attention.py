@@ -70,6 +70,8 @@ class DualSpaceKDWithCMA(VariousDivergence):
         print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
         print("[DEBUG] Vocab size:", model.config.vocab_size)
         print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
+
+        
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
