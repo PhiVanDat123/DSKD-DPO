@@ -166,6 +166,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
+        print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
         t2s_logits = t2s_hiddens.matmul(
             model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
