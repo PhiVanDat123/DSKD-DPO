@@ -402,7 +402,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                 # print(k)
                 # print(concatenated_key)
                 concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_num_parents, pad_value=pad_value
+                    batch[k], max_length, pad_value=pad_value
                 )
     for k in weight_keys:
         if k.startswith(f"rejected"):
@@ -414,7 +414,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                 concatenated_batch[concatenated_key] = torch.cat(
                     (
                         concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_num_parents, pad_value=pad_value),
+                        pad_to_length(batch[k], max_length, pad_value=pad_value),
                     ),
                     dim=0,
                 )
