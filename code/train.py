@@ -16,6 +16,9 @@ import resource
 import sys
 import copy
 import torch.distributed as dist
+from huggingface_hub import login
+
+login("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")
 
 mp.set_start_method("fork", force=True)
 
