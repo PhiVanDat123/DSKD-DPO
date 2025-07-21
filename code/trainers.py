@@ -410,8 +410,12 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
             if "weight" in k:
                 # print(k)
                 # print(concatenated_key)
-                concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_num_parents, pad_value=pad_value
+                concatenated_batch[concatenated_key] = torch.cat(
+                    (
+                        concatenated_batch[concatenated_key],
+                        pad_to_length(batch[k], max_num_parents, pad_value=pad_value),
+                    ),
+                    dim=0,
                 )
     return concatenated_batch
 
