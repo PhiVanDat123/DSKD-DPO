@@ -67,6 +67,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         self.distiller = distiller
         model = model.to(device)
         teacher_model = reference_model.to(device)
+        print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
+        print("[DEBUG] Vocab size:", model.config.vocab_size)
+        print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
@@ -75,9 +78,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
                 output_hidden_states=True)
         
-        print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
-        print("[DEBUG] Vocab size:", model.config.vocab_size)
-        print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
         '''
         with torch.no_grad():
             model.eval()
