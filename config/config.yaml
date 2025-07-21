@@ -135,8 +135,8 @@ projector_lr: 1e-4
 pretrained_projector: None
 pretrained_projector_lr: 1e-4
 is_model_parallel: false
-n_embed: 4096
-hidden_size: 8192`
+n_embed: 2048
+hidden_size: 2048
 teacher_peft_path: None
 projector_path: None
 
