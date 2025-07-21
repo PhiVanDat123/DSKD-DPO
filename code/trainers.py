@@ -270,7 +270,7 @@ def _get_batch_logps_tisdpo(logits: torch.FloatTensor, reference_logits: torch.F
     labels = labels[:, 1:].clone()
     logits = logits[:, :-1, :]
     reference_logits = reference_logits[:, :-1, :]
-    print(f"[DEBUG] logits shape: {logits.shape}")
+    print(f"[_get_batch_logps_tisdpo] logits shape: {logits.shape}")
 
     loss_mask = (labels != -100)
 
