@@ -596,7 +596,7 @@ class BasicTrainer(object):
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-        reference_all_logits, _ = self.DSKD.compute_dual_space_kd_loss_with_cma(self, concatenated_batch, teacher_concatenated_batch, distiller, model, reference_model)
+        reference_all_logits, _ = self.DSKD.compute_dual_space_kd_loss_with_cma(concatenated_batch, teacher_concatenated_batch, distiller, model, reference_model)
         print(f"[tisdpo_concatenated_forward] reference_all_logits shape: {reference_all_logits.shape}")
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
