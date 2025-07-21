@@ -9,13 +9,13 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
   model=DSKD-DPO \
-  model.policy_name_or_path=openai-community/gpt2 \
+  model.policy_name_or_path=bigscience/bloom-560m \
   model.reference_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
-  model.teacher_tokenizer_name_or_path=openai-community/gpt2 \
+  model.teacher_tokenizer_name_or_path=bigscience/bloom-560m \
   model.student_tokenizer_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
-  model.teacher_name_or_path=openai-community/gpt2 \
+  model.teacher_name_or_path=bigscience/bloom-560m \
   model.student_name_or_path=tonyshelby/Qwen2.5_0.5B_SFT_sample \
-  model.policy_block_name=GPT2Block \
+  model.policy_block_name=BloomBlock \
   model.reference_block_name=Qwen2DecoderLayer \
   loss=tisdpo \
   policy_mode=student \
