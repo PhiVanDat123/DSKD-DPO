@@ -155,6 +155,8 @@ class DualSpaceKDWithCMA(VariousDivergence):
             norm_teacher_hiddens + norm_tea_target_embeds
         ).float().to(device)
         
+        print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
+        print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
         align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
         align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
