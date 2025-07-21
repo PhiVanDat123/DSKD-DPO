@@ -596,7 +596,7 @@ class BasicTrainer(object):
                                                    #attention_mask=concatenated_batch[
                                                        #'concatenated_attention_mask']).logits.to(torch.float32)
         
-        reference_all_logits, _ = self.DSKD.compute_dual_space_kd_loss_with_cma(self, distiller, config, concatenated_batch, teacher_concatenated_batch, model, reference_model)
+        reference_all_logits, _ = self.DSKD.compute_dual_space_kd_loss_with_cma(self, concatenated_batch, teacher_concatenated_batch, distiller, model, reference_model)
         print(f"[tisdpo_concatenated_forward] reference_all_logits shape: {reference_all_logits.shape}")
 
         all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
@@ -974,7 +974,7 @@ class BasicTrainer(object):
                     #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
                     concat_student_data = concatenated_inputs(local_microbatch, mode='student')
                     concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
-                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(self, distiller, config, concat_student_data, concat_teacher_data, self.policy, self.reference_model)
+                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(self, concat_student_data, concat_teacher_data, distiller, self.policy, self.reference_model)
 
                     #  Projector loss vẫn cần tính gradient
                     projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
