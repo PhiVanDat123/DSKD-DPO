@@ -163,10 +163,12 @@ class DualSpaceKDWithCMA(VariousDivergence):
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
         align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
         align = align + (1.0 - align_mask) * (-100000)
+        print("[DEBUG] align shape:", align.shape)
 
         t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
+        print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
         t2s_logits = t2s_hiddens.matmul(
             model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
