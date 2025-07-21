@@ -9,6 +9,6 @@
     },
     "query": {
         "enabled": true,
-        "structure": "s-t"
+        "structure": "s-2t"
     }
 }
