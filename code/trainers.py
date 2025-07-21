@@ -1015,6 +1015,7 @@ class BasicTrainer(object):
                     mode="student",
                     train=True
                 )
+                print(f"[train] loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
                 (loss / self.config.gradient_accumulation_steps).backward()
 
                 for k, v in metrics.items():
