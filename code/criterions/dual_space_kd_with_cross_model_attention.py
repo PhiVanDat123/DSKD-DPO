@@ -78,7 +78,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
         print("[DEBUG] Vocab size:", model.config.vocab_size)
         print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
-
+        '''
         with torch.no_grad():
             model.eval()
             outputs = model(
@@ -86,7 +86,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 attention_mask=concat_student_data[f"concatenated_student_attention_mask"].to(device),
                 output_hidden_states=True).logits.to(device)
             print("[DEBUG] outputs logits shape:", outputs.shape)
-        
+        '''
         #concat_output_data = concatenated_inputs(output_data)
         target = concat_student_data["concatenated_student_labels"].to(device)
         teacher_target = concat_teacher_data["concatenated_teacher_labels"].to(device)
