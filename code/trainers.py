@@ -263,7 +263,9 @@ def _get_batch_logps_tisdpo(logits: torch.FloatTensor, reference_logits: torch.F
     """
     assert logits.shape[:-1] == labels.shape
 
-    
+    print(f"[DEBUG] labels shape: {labels.shape}")
+    print(f"[DEBUG] weights shape before slice: {weights.shape}")
+
 
     labels = labels[:, 1:].clone()
     logits = logits[:, :-1, :]
