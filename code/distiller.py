@@ -95,9 +95,16 @@ class Distiller(nn.Module):
     def set_and_load_existing_projectors(self):
         self.projectors = nn.ModuleDict()
         projector_config = json.load(open(self.config.projector_config_path))
+        '''
         name_dict = {
             "s": self.student_hidden_size, 
             "t": self.teacher_hidden_size,
+            "relu": nn.ReLU()
+        }
+        '''
+        name_dict = {
+            "s": 2048, 
+            "t": 2048,
             "relu": nn.ReLU()
         }
         # auto-parse projector config strings to construct nn.Module
