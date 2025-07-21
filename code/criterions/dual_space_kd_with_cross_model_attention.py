@@ -60,13 +60,13 @@ class DualSpaceKDWithCMA(VariousDivergence):
     
     '''
     def compute_dual_space_kd_loss_with_cma(
-        self, concat_student_data, concat_teacher_data, distiller
+        self, concat_student_data, concat_teacher_data, distiller, model, reference_model
     ):  
-        device = next(distiller.teacher_model.parameters()).device  # Lấy device của mô hình
+        device = next(reference_model).device  # Lấy device của mô hình
         #batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         self.distiller = distiller
-        model = distiller.student_model.to(device)
-        teacher_model = distiller.teacher_model.to(device)
+        model = model.to(device)
+        teacher_model = reference_model.to(device)
         with torch.no_grad():
             teacher_model.eval()
             teacher_outputs = teacher_model(
@@ -96,29 +96,29 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
 
-        if hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.embed_tokens
-        elif hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "model") \
-            and hasattr(distiller.student_model.model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.model.embed_tokens
-        elif hasattr(distiller.student_model, "transformer") \
-            and hasattr(distiller.student_model.transformer, "wte"):
-            stu_embed_tokens = distiller.student_model.transformer.wte
+        if hasattr(model, "model") \
+            and hasattr(model.model, "embed_tokens"):
+            stu_embed_tokens = model.model.embed_tokens
+        elif hasattr(model, "model") \
+            and hasattr(model.model, "model") \
+            and hasattr(model.model.model, "embed_tokens"):
+            stu_embed_tokens = model.model.model.embed_tokens
+        elif hasattr(model, "transformer") \
+            and hasattr(model.transformer, "wte"):
+            stu_embed_tokens = model.transformer.wte
         else:
             raise NotImplementedError
 
-        if hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "model") \
-            and hasattr(distiller.teacher_model.model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "transformer") \
-            and hasattr(distiller.teacher_model.model, "wte"):
-            tea_embed_tokens = distiller.teacher_model.transformer.wte
+        if hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.embed_tokens
+        elif hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "model") \
+            and hasattr(teacher_model.model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.model.embed_tokens
+        elif hasattr(teacher_model, "transformer") \
+            and hasattr(teacher_model.model, "wte"):
+            tea_embed_tokens = teacher_model.transformer.wte
         else:
             raise NotImplementedError
 
@@ -157,7 +157,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
         t2s_logits = t2s_hiddens.matmul(
-            distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
+            model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
         print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
         
