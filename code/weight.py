@@ -326,7 +326,7 @@ def main():
     parser.add_argument(
         "--data_path",
         type=str,
-        default="pvdhihihi/ultra-feedback_v6",
+        default="tonyshelby/ultra-feedback_checking",
         required=True,
         help="Path to the dataset.",
     )
