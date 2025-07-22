@@ -3,10 +3,9 @@ set -e
 
 echo "Current directory: $(pwd)"
 
-CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/code"
 
-model_name_1="tonyshelby/Qwen2.5_0.5B_SFT_sample"
-model_name_2="tonyshelby/Qwen2.5_0.5B_SFT_sample"
+model_name_1="Qwen/Qwen2.5-14B"
+model_name_2="Qwen/Qwen2.5-14B"
 #input_dir="datasets/ultra-feedback"
 data_path="tonyshelby/ultra-feedback_checking"
 output_dir="generated-data/ultra-feedback-tisdpo"
@@ -24,6 +23,4 @@ ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --output_dir $output_dir \
   --batch_size $batch_size \
   --num_gpus $num_gpus \
-  $(if $force_sequential; then echo "--force_sequential"; fi) 
-
-
+  $(if $force_sequential; then echo "--force_sequential"; fi)
