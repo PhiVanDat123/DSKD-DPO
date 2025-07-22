@@ -624,8 +624,10 @@ class BasicTrainer(object):
         chosen_position_kl = all_position_kl[:batch[f'chosen_{mode}_input_ids'].shape[0]]
         rejected_position_kl = all_position_kl[batch[f'chosen_{mode}_input_ids'].shape[0]:]
 
-        chosen_logps = all_logps[:batch[f'chosen_{mode}_input_ids'].shape[0]].detach()
-        rejected_logps = all_logps[batch[f'chosen_{mode}_input_ids'].shape[0]:].detach()
+        #chosen_logps = all_logps[:batch[f'chosen_{mode}_input_ids'].shape[0]].detach()
+        chosen_logps = all_logps[:batch[f'chosen_{mode}_input_ids'].shape[0]]
+        #rejected_logps = all_logps[batch[f'chosen_{mode}_input_ids'].shape[0]:].detach()
+        rejected_logps = all_logps[batch[f'chosen_{mode}_input_ids'].shape[0]:]
 
         return chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, \
             chosen_logps, rejected_logps

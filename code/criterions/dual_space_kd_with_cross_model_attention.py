@@ -72,13 +72,13 @@ class DualSpaceKDWithCMA(VariousDivergence):
         print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
 
         
-        with torch.no_grad():
-            teacher_model.eval()
-            teacher_outputs = teacher_model(
-                concat_teacher_data["concatenated_teacher_input_ids"].to(device),
-                attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"].to(device),
-                #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
-                output_hidden_states=True)
+        
+        teacher_model.eval()
+        teacher_outputs = teacher_model(
+            concat_teacher_data["concatenated_teacher_input_ids"].to(device),
+            attention_mask=concat_teacher_data[f"concatenated_teacher_attention_mask"].to(device),
+            #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
+            output_hidden_states=True)
         
         '''
         with torch.no_grad():
