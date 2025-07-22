@@ -289,9 +289,16 @@ def _get_batch_logps_tisdpo(logits: torch.FloatTensor, reference_logits: torch.F
 
     logps_margin = per_token_logps - per_reference_token_logps
     weights = weights[:, 1:].clone()
-    print("[_get_batch_logps_tisdpo] logps_margin shape:", logps_margin.shape)
-    print("[_get_batch_logps_tisdpo] weights shape:", weights.shape)
-    print("[_get_batch_logps_tisdpo] loss_mask shape:", loss_mask.shape)
+    #print("[_get_batch_logps_tisdpo] logps_margin shape:", logps_margin.shape)
+    #print("[_get_batch_logps_tisdpo] weights shape:", weights.shape)
+    #print("[_get_batch_logps_tisdpo] loss_mask shape:", loss_mask.shape)
+
+    print("[_get_batch_logps_tisdpo] logits.requires_grad:", logits.requires_grad)
+    print("[_get_batch_logps_tisdpo] reference_logits.requires_grad:", reference_logits.requires_grad)
+    print("[_get_batch_logps_tisdpo] vocab_logps.requires_grad:", vocab_logps.requires_grad)
+    print("[_get_batch_logps_tisdpo] per_token_logps.requires_grad:", per_token_logps.requires_grad)
+    print("[_get_batch_logps_tisdpo] logps_margin.requires_grad:", logps_margin.requires_grad)
+
     
     if average_log_prob:
         return (logps_margin * weights * loss_mask).sum(-1) / loss_mask.sum(-1), \
