@@ -3,7 +3,7 @@ set -e
 
 echo "Current directory: $(pwd)"
 
-CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
+CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/code"
 
 model_name_1="tonyshelby/Qwen2.5_0.5B_SFT_sample"
 model_name_2="openai-community/gpt2"
