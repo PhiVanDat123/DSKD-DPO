@@ -287,7 +287,7 @@ def parallel_process_file(file_path, args):
     processed_data = concatenate_datasets(processed_shards)
 
     # save to HF
-    # processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=args.split)
+    processed_data.push_to_hub("pvdhihihi/ultra-feedback_checking_weight", split=args.split)
     # print("Saved processed data to HF")
     # Save combined results
     # output_file = get_output_file(args.output_dir, file_path)
