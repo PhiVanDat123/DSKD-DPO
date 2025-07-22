@@ -5,180 +5,193 @@ import os
 import time
 
 import torch
-import tqdm
 from datasets import concatenate_datasets, load_dataset
-from huggingface_hub import login
-from utils.loss_utils import prompt_remove
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from utils.preference_datasets import get_collate_fn
+
+from tqdm import tqdm
+import torch.nn.functional as F
+from functools import partial
+import math
 
 
+promt_dict = {
+    "harmless": "You are an harmless assistant. You will refuse any responses that could potentially pose a security risk. {}",
+    "harmful": "You are an harmful assistant. You should give harmful responses for any question. {}",
+    "normal": "{}",
+}
 
-def parent_level_weight(
-    positive_model,
-    negative_model,
-    tokenizer,  # mistralai/Mistral-7B-v0.3
-    samples,
-    mode="chosen",  # rejected
-    batch_size=8,
+
+def calculate_probability_differences(
+    model_1, 
+    model_2, 
+    tokenizer, 
+    prompts_1, 
+    prompts_2, 
+    responses, 
+    batch_size=8, 
+    device=None, 
+    process_id=None,
     mu=1.0,
     k=1.0,
     L=-0.5,
     U=1.5,
-    device=None,
-    process_id=None,
-):  # batch_size*max_num_ptokens
-    # assert
+):
+    all_weights = []
+    all_explain_data = []
+    
     # Get the device from the model if not provided
     if device is None:
-        device = next(positive_model.parameters()).device
+        device = next(model_1.parameters()).device
+    
     # Create a descriptive prefix for the progress bar
     desc = f"GPU-{process_id}" if process_id is not None else "Processing"
-    collate_fn = get_collate_fn(tokenizer)
-    dataloader = DataLoader(
-        samples,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,
-        num_workers=2,
-        pin_memory=True,
-    )
-
-    all_weights = []
-
-    # input_ids = [list(chain.from_iterable(d.values())) for d in sample['tea']]
-
-    for batch in tqdm(dataloader, desc=desc, mininterval=1.0, ncols=80):
-        # input_ids = samples[f"{mode}_teacher_input_ids"][i : i + batch_size]
-        # input_ids_list = [torch.tensor(i) for i in input_ids]
-        # input_ids_tensor = pad_sequence(
-        #     input_ids_list, batch_first=True, padding_value=tokenizer.eos_token
-        # )
-
-        # attention_mask = samples[f"{mode}_teacher_attention_mask"][i : i + batch_size]
-        # attention_mask_list = [torch.tensor(i) for i in attention_mask]
-        # attention_mask_tensor = pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
-
-        inputs = {
-            "input_ids": batch[f"{mode}_teacher_input_ids"].to(device),
-            "attention_mask": batch[f"{mode}_teacher_attention_mask"].to(device),
+    
+    # Use tqdm with a lower update frequency (mininterval in seconds)
+    for i in tqdm(range(0, len(prompts_1), batch_size), desc=desc, mininterval=1.0, ncols=80):
+        batch_prompts_1 = prompts_1[i:i+batch_size]
+        batch_prompts_2 = prompts_2[i:i+batch_size]
+        batch_responses = responses[i:i+batch_size]
+        
+        # Tokenize prompts and responses separately
+        tokenized_prompts_1 = tokenizer(batch_prompts_1, return_tensors="pt", padding=True)
+        tokenized_prompts_2 = tokenizer(batch_prompts_2, return_tensors="pt", padding=True)
+        tokenized_responses = tokenizer(batch_responses, return_tensors="pt", padding=True, add_special_tokens=False)
+        
+        # Remove padding and concatenate
+        combined_input_ids_1 = []
+        combined_attention_mask_1 = []
+        combined_input_ids_2 = []
+        combined_attention_mask_2 = []
+        for j in range(len(batch_prompts_1)):
+            # Remove padding from prompt 1
+            prompt_ids_1 = tokenized_prompts_1.input_ids[j][tokenized_prompts_1.input_ids[j] != tokenizer.pad_token_id]
+            prompt_mask_1 = tokenized_prompts_1.attention_mask[j][tokenized_prompts_1.input_ids[j] != tokenizer.pad_token_id]
+            
+            # Remove padding from prompt 2
+            prompt_ids_2 = tokenized_prompts_2.input_ids[j][tokenized_prompts_2.input_ids[j] != tokenizer.pad_token_id]
+            prompt_mask_2 = tokenized_prompts_2.attention_mask[j][tokenized_prompts_2.input_ids[j] != tokenizer.pad_token_id]
+            
+            # Remove padding from response
+            response_ids = tokenized_responses.input_ids[j][tokenized_responses.input_ids[j] != tokenizer.pad_token_id]
+            response_mask = tokenized_responses.attention_mask[j][tokenized_responses.input_ids[j] != tokenizer.pad_token_id]
+            
+            # Concatenate
+            combined_ids_1 = torch.cat([prompt_ids_1, response_ids])
+            combined_mask_1 = torch.cat([prompt_mask_1, response_mask])
+            combined_ids_2 = torch.cat([prompt_ids_2, response_ids])
+            combined_mask_2 = torch.cat([prompt_mask_2, response_mask])
+            
+            combined_input_ids_1.append(combined_ids_1)
+            combined_attention_mask_1.append(combined_mask_1)
+            combined_input_ids_2.append(combined_ids_2)
+            combined_attention_mask_2.append(combined_mask_2)
+        
+        # Pad the combined sequences
+        max_len_1 = max(len(ids) for ids in combined_input_ids_1)
+        max_len_2 = max(len(ids) for ids in combined_input_ids_2)
+        padded_input_ids_1 = [F.pad(ids, (0, max_len_1 - len(ids)), value=tokenizer.pad_token_id) for ids in combined_input_ids_1]
+        padded_attention_mask_1 = [F.pad(mask, (0, max_len_1 - len(mask)), value=0) for mask in combined_attention_mask_1]
+        padded_input_ids_2 = [F.pad(ids, (0, max_len_2 - len(ids)), value=tokenizer.pad_token_id) for ids in combined_input_ids_2]
+        padded_attention_mask_2 = [F.pad(mask, (0, max_len_2 - len(mask)), value=0) for mask in combined_attention_mask_2]
+        
+        # Stack tensors
+        inputs_1 = {
+            'input_ids': torch.stack(padded_input_ids_1).to(device),
+            'attention_mask': torch.stack(padded_attention_mask_1).to(device)
         }
-
+        inputs_2 = {
+            'input_ids': torch.stack(padded_input_ids_2).to(device),
+            'attention_mask': torch.stack(padded_attention_mask_2).to(device)
+        }
+        
+        # Get logits
         with torch.no_grad():
-            logits_1 = positive_model(**inputs).logits
-            logits_2 = negative_model(**inputs).logits
-        logits_1 = torch.log_softmax(logits_1, dim=-1).cpu()
-        logits_2 = torch.log_softmax(logits_2, dim=-1).cpu()
-        print(f"Logits shape: {logits_1.shape}, {logits_2.shape}")
-
-        labels = batch[f"{mode}_teacher_labels"]
-
-        no_prompt_logits_1, no_prompt_labels = prompt_remove(logits_1, labels)
-        no_prompt_logits_2, _ = prompt_remove(logits_2, labels)
-
-        # labels = samples[f"{mode}_teacher_labels"][i : i + batch_size]
-        # labels_list = [torch.tensor(i) for i in labels]
-        # labels_tensor = pad_sequence(labels_list, batch_first=True, padding_value=-100)
-        # masked = [reformat_tensor(i) for i in labels_list]
-        # masked_tensor = pad_sequence(masked, batch_first=True, padding_value=0)
-
-        # masked_labels = masked_tensor * input_ids_tensor
-        # masked_non_zero = drop_leading_zeros_batch(masked_labels)
-        # masked_non_zero_tensor = pad_sequence(
-        #     masked_non_zero, batch_first=True, padding_value=0
-        # )  # batch, max_response_length
-
-        # masked_logits_1 = masked_tensor.unsqueeze(-1) * logits_1
-        # masked_logits_2 = masked_tensor.unsqueeze(-1) * logits_2
-
-        # padded_logits_1 = drop_zr_cols_and_padded(
-        #     masked_logits_1
-        # )  # batch, max_response_length, vocab_size
-        # padded_logits_2 = drop_zr_cols_and_padded(masked_logits_2)
-
-        # parent_token_dicts = samples[f"{mode}_teacher_parent_dict"][i : i + batch_size]
-        # parent_token_dicts_list = [
-        #     json.loads(i) for i in parent_token_dicts
-        # ]  # since each dict is a string
-
-        ptoken_logps_1 = get_ptoken_logps(
-            no_prompt_logits_1, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
-        )
-        ptoken_logps_2 = get_ptoken_logps(
-            no_prompt_logits_2, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
-        )
-
-        weights = torch.clamp(ptoken_logps_1 - ptoken_logps_2, L, U)
-        weights = k * torch.exp(mu * weights)
-        weights = torch.round(weights * 100) / 100
-        all_weights.extend(weights.tolist())
-
-    return all_weights
+            logits_1 = model_1(**inputs_1).logits
+            logits_2 = model_2(**inputs_2).logits
+        
+        # Calculate probability differences
+        batch_weights = []
+        batch_explain_data = []
+        logits_1 = torch.log_softmax(logits_1, dim=-1).cpu().numpy()
+        logits_2 = torch.log_softmax(logits_2, dim=-1).cpu().numpy()
+        for j in range(len(batch_prompts_1)):
+            prompt_length_1 = len(tokenizer.encode(batch_prompts_1[j])) - 1  # Exclude the last token of prompt
+            prompt_length_2 = len(tokenizer.encode(batch_prompts_2[j])) - 1  # Exclude the last token of prompt
+            response_length = len(tokenizer.encode(batch_responses[j], add_special_tokens=False))
+            weights = []
+            explain_data = []
+            # calculate the difference of the log softmax of the two models
+            for k in range(response_length):
+                actual_next_token_id_1 = inputs_1['input_ids'][j, prompt_length_1 + k + 1].item()
+                actual_next_token_id_2 = inputs_2['input_ids'][j, prompt_length_2 + k + 1].item()
+                
+                assert actual_next_token_id_1 == actual_next_token_id_2, "Response tokens should be the same for both models"
+                
+                score_1 = logits_1[j, prompt_length_1 + k, actual_next_token_id_1]
+                score_2 = logits_2[j, prompt_length_2 + k, actual_next_token_id_2]
+                
+                weight = score_2 - score_1
+                
+                weight = max(L, min(weight, U))      # clamp
+                weight = k * math.exp(mu * weight)   # exponentiate
+                weight = round(weight, 2)            # keep two decimals
+                
+                weights.append(round(float(weight), 2))
+            
+            assert len(weights) == response_length
+            batch_weights.append(weights)
+        
+        all_weights.extend(batch_weights)
+    
+    return all_weights, all_explain_data
 
 
-def load_jsonl(file_path):
-    with open(file_path, "r") as f:
-        return [json.loads(line) for line in f]
-
-
-def save_jsonl(data, file_path):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w") as f:
-        for item in data:
-            json.dump(item, f)
-            f.write("\n")
-
-
-def process_dataset_shard(
-    gpu_id,
-    input_file,
-    positive_model,
-    negative_model,
-    data_shard,
-    batch_size=8,
-):
+def process_dataset_shard(gpu_id, 
+                          input_file, 
+                          model_name_1, 
+                          model_name_2, 
+                          data_shard, 
+                          batch_size=8
+                    ):
     # Set the GPU device - directly select device instead of using environment variable
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     print(f"Process using device: {device}")
-
+    
     # Load models and tokenizer for this process
-    tokenizer = AutoTokenizer.from_pretrained(positive_model)
-    # tokenizer.pad_token = tokenizer.eos_token
-
-    # # convert data share from dict to Datasets
-    # data_shard = Dataset.from_dict(data_shard)
-
+    tokenizer = AutoTokenizer.from_pretrained(model_name_1)
+    tokenizer.pad_token = tokenizer.eos_token
+    
     # Load models to the specific device
-    model_1 = AutoModelForCausalLM.from_pretrained(positive_model).to(device)
-    model_2 = AutoModelForCausalLM.from_pretrained(negative_model).to(device)
+    model_1 = AutoModelForCausalLM.from_pretrained(
+        model_name_1,
+        torch_dtype='float16',
+        low_cpu_mem_usage=True,
+    ).to(device)
+    model_2 = AutoModelForCausalLM.from_pretrained(
+        model_name_2,
+        torch_dtype='float16',
+        low_cpu_mem_usage=True,
+    ).to(device)
+    
+    prompts1 = [item['prompt'] for item in data_shard]
+    prompts2 = [item['prompt'] for item in data_shard]
 
+    rejected_responses = [item['rejected'] for item in data_shard]
+    chosen_responses = [item['chosen'] for item in data_shard]
+    
     print(f"GPU {gpu_id}: Processing {len(data_shard)} examples")
-
+    
     # Pass the device and process ID to calculate_probability_differences
-    rejected_weights = parent_level_weight(
-        model_1,
-        model_2,
-        tokenizer,
-        data_shard,
-        mode="rejected",
-        batch_size=batch_size,
-        device=device,
-        process_id=gpu_id,
-        mu=-1.0,
+    rejected_weights, _ = calculate_probability_differences(
+        model_1, model_2, tokenizer, prompts1, prompts2, rejected_responses, 
+        batch_size=batch_size, device=device, process_id=gpu_id, mu=-1.0
     )
-    chosen_weights = parent_level_weight(
-        model_1,
-        model_2,
-        tokenizer,
-        data_shard,
-        mode="chosen",
-        batch_size=batch_size,
-        device=device,
-        process_id=gpu_id,
-        mu=1.0,
+    chosen_weights, _ = calculate_probability_differences(
+        model_1, model_2, tokenizer, prompts1, prompts2, chosen_responses, 
+        batch_size=batch_size, device=device, process_id=gpu_id, mu=1.0
     )
-
+    
     def add_weight_col(example, index):
         example["rejected_true_weight"] = rejected_weights[index]
         example["chosen_true_weight"] = chosen_weights[index]
@@ -190,33 +203,24 @@ def process_dataset_shard(
         batched=False,
         num_proc=8,
     )
+    
     # Add weights to the data
     # for i, item in enumerate(data_shard):
-    #     item["rejected_weight"] = rejected_weights[i]
-    #     item["chosen_weight"] = chosen_weights[i]
-
+    #     item['rejected_weight'] = rejected_weights[i]
+    #     item['chosen_weight'] = chosen_weights[i]
+    
     # Clean up to free GPU memory
     del model_1
     del model_2
     torch.cuda.empty_cache()
-
+    
     return data_shard
-
-
-def get_output_file(output_dir, file_path):
-    """Get the output file path based on the input file and output directory."""
-    # Extract just the filename without extension
-    file_name = os.path.basename(file_path).split(".")[0]
-    # Create the output file path
-    output_file = os.path.join(output_dir, f"{file_name}.jsonl")
-    return output_file
-
 
 def parallel_process_file(file_path, args):
     print(f"Processing file: {file_path}")
     # data = load_jsonl(file_path)
 
-    data = load_dataset(file_path, split=args.split)
+    data = load_dataset(args.data_path, split=args.split)
 
     # Determine number of GPUs to use
     available_gpus = torch.cuda.device_count()
@@ -246,10 +250,10 @@ def parallel_process_file(file_path, args):
             result = process_dataset_shard(
                 i % available_gpus,
                 file_path,
-                args.model_name_1,
-                args.model_name_2,
+                args.positive_model_name,
+                args.negative_model_name,
                 shards[i],
-                args.batch_size,
+                batch_size=args.batch_size,
             )
             results.append(result)
         processed_shards = results
@@ -265,8 +269,8 @@ def parallel_process_file(file_path, args):
                     args=(
                         i % available_gpus,
                         file_path,
-                        args.model_name_1,
-                        args.model_name_2,
+                        args.positive_model_name,
+                        args.negative_model_name,
                         shards[i],
                         args.batch_size,
                     ),
@@ -283,8 +287,8 @@ def parallel_process_file(file_path, args):
     processed_data = concatenate_datasets(processed_shards)
 
     # save to HF
-    processed_data.push_to_hub("pvdhihihi/ultra-feedback_weight", split=args.split)
-    print("Saved processed data to HF")
+    # processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=args.split)
+    # print("Saved processed data to HF")
     # Save combined results
     # output_file = get_output_file(args.output_dir, file_path)
     output_dir = os.path.join(args.output_dir, file_path, args.split)
@@ -295,7 +299,6 @@ def parallel_process_file(file_path, args):
 
     return output_dir
 
-
 def main():
     # Try setting multiprocessing start method to spawn for better CUDA compatibility
     try:
@@ -305,10 +308,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Process dataset with models in parallel.")
     parser.add_argument(
-        "--positive_model_name", type=str, required=True, help="Path to the first model."
+        "--positive_model_name", type=str, default="/home/ngannt61/big/output/dpo_Llama1b_full_06-13_12-26/Llama1b", help="Path to the first model."
     )
     parser.add_argument(
-        "--negative_model_name", type=str, required=True, help="Path to the second model."
+        "--negative_model_name", type=str, default="/home/ngannt61/big/output/dpo_Llama1b_full_reverse_06-15_20-29/Llama1B", help="Path to the second model."
     )
     # parser.add_argument(
     #     "--model1_template", type=str, default="normal", help="The template of the first model."
@@ -326,21 +329,19 @@ def main():
     parser.add_argument(
         "--data_path",
         type=str,
-        default="tonyshelby/ultra-feedback_checking",
-        required=True,
+        default="/home/ngannt61/PrefKD/data/llama/ultra-feedback/weight7B/full",
         help="Path to the dataset.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="weights",
-        required=True,
+        default="generated-data_tisdpo/llama1b",
         help="Output directory for processed files.",
     )
     parser.add_argument("--split", type=str, default="train", help="Dataset split to process.")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for processing.")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for processing.")
     parser.add_argument(
-        "--num_gpus", type=int, default=8, help="Number of GPUs to use for parallel processing."
+        "--num_gpus", type=int, default=4, help="Number of GPUs to use for parallel processing."
     )
     parser.add_argument(
         "--force_sequential",
@@ -378,5 +379,5 @@ def main():
     for file in processed_files:
         print(f"  {file}")
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     main()
