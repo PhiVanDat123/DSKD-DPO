@@ -17,12 +17,10 @@ split="train"
 
 echo "[DEBUG] script running:"
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
-  --config-dir $CONFIG_DIR \
-  --config-name config.yaml \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
   --data_path $data_path \
-  --spilt=$split \
+  --split=$split \
   --input_dir $input_dir \
   --output_dir $output_dir \
   --batch_size $batch_size \
