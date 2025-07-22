@@ -103,8 +103,8 @@ class Distiller(nn.Module):
         }
         '''
         name_dict = {
-            "s": 1024, 
-            "t": 896,
+            "s": 4096, #8B 
+            "t": 5120, #14B
             "relu": nn.ReLU()
         }
         # auto-parse projector config strings to construct nn.Module
