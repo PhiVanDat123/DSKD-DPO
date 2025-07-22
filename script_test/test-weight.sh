@@ -6,7 +6,7 @@ echo "Current directory: $(pwd)"
 CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/code"
 
 model_name_1="tonyshelby/Qwen2.5_0.5B_SFT_sample"
-model_name_2="openai-community/gpt2"
+model_name_2="tonyshelby/Qwen2.5_0.5B_SFT_sample"
 #input_dir="datasets/ultra-feedback"
 data_path="tonyshelby/ultra-feedback_checking"
 output_dir="generated-data/ultra-feedback-tisdpo"
