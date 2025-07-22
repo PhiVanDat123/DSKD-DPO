@@ -21,6 +21,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --config-name config.yaml \
   --positive_model_name $model_name_1 \
   --negative_model_name $model_name_2 \
+  --data_path $data_path \
   --spilt=$split \
   --input_dir $input_dir \
   --output_dir $output_dir \
