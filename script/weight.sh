@@ -4,10 +4,10 @@ set -e
 echo "Current directory: $(pwd)"
 
 
-model_name_1="Qwen/Qwen2.5-14B"
-model_name_2="Qwen/Qwen2.5-14B"
+model_name_1="Qwen/Qwen2.5-14B" #thay bằng path checkpoint dpo
+model_name_2="Qwen/Qwen2.5-14B" #thay bằng path checkpoint dpo đảo
 #input_dir="datasets/ultra-feedback"
-data_path="tonyshelby/ultra-feedback_checking"
+data_path="tonyshelby/ultra-feedback_new_v1"
 output_dir="generated-data/ultra-feedback-tisdpo"
 batch_size=4
 num_gpus=2
