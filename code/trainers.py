@@ -604,7 +604,8 @@ class BasicTrainer(object):
         """
         concatenated_batch = concatenated_inputs(batch, mode)
         all_logits = model(concatenated_batch[f'concatenated_{mode}_input_ids'],
-                           attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits.to(torch.float32)
+                           attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits
+        all_logits = all_logits.to(dtype=torch.float32)
         print(f"[tisdpo_concatenated_forward] all_logits shape: {all_logits.shape}")
         teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
 
