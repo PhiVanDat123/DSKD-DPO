@@ -19,13 +19,13 @@ echo "[DEBUG] script running:"
 ${CONDA_PREFIX}/bin/python -u ../code/weight.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
-  positive_model_name=$model_name_1 \
-  negative_model_name=$model_name_2 \
-  data_path=$data_path \
-  split=$split \
-  output_dir=$output_dir \
-  batch_size=$batch_size \
-  num_gpus=$num_gpus \
-  force_sequential=$force_sequential
+  --positive_model_name $model_name_1 \
+  --negative_model_name $model_name_2 \
+  --spilt=$split \
+  --input_dir $input_dir \
+  --output_dir $output_dir \
+  --batch_size $batch_size \
+  --num_gpus $num_gpus \
+  $(if $force_sequential; then echo "--force_sequential"; fi) 
 
 

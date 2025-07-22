@@ -3,229 +3,23 @@ import json
 import multiprocessing as mp
 import os
 import time
-import math
-import hydra
 
 import torch
-from tqdm import tqdm
+import tqdm
 from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import login
-from utils.loss_utils import get_token_logps, prompt_remove
+from utils.loss_utils import prompt_remove
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils.preference_datasets import get_collate_fn
-from utils.distill_datasets import DistillDataset
-from distiller import Distiller
-from typing import Dict, List, Union
-from utils.utils import pad_to_length
-from distiller import Distiller
-from omegaconf import OmegaConf
-from utils.utils import build_exp_name, get_local_run_dir
-from utils.preference_datasets import CustomCollate
 
 
-# Replace 'your_token_here' with the token you got from Hugging Face
-#login(token=".....")
 
-OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dir: get_local_run_dir(exp_name, local_dir))
-OmegaConf.register_new_resolver(
-    "build_exp_name", 
-    lambda loss_name, model_name, datasets, reverse_dataset, reference_model_name: 
-        build_exp_name(loss_name, model_name, datasets, reverse_dataset, reference_model_name)
-)
-
-def fast_pad_tensor(input_tensor, max_token, max_span, pad_value=-1):
-    batch_size, token_size, span_size = input_tensor.shape
-
-    # Create the output tensor filled with pad_value
-    output = input_tensor.new_full((batch_size, max_token, max_span), pad_value)
-
-    # Copy the original values into the top-left part
-    output[:, :token_size, :span_size] = input_tensor
-
-    return output
-
-def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
-    """Concatenate the chosen and rejected inputs into a single tensor.
-
-    Args:
-        batch: A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids', which are tensors of shape (batch_size, sequence_length).
-
-    Returns:
-        A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
-    """
-    ''''''
-    max_length = max(
-        batch[f"chosen_{mode}_input_ids"].shape[1], batch[f"rejected_{mode}_input_ids"].shape[1]
-    )
-    max_num_parents = max(
-        batch[f"chosen_{mode}_parent_list"].shape[1], batch[f"rejected_{mode}_parent_list"].shape[1]
-    )
-    max_span = max(
-        batch[f"chosen_{mode}_parent_list"].shape[2], batch[f"rejected_{mode}_parent_list"].shape[2]
-    )
-    concatenated_batch = {}
-    #keys = [k for k in batch if mode in k]
-    #keys.extend([k for k in batch if "weight" in k])
-    keys = [k for k in batch if k.startswith(f"chosen_{mode}") or k.startswith(f"rejected_{mode}")]
-    for k in keys:
-        # if k.startswith("chosen") and isinstance(batch[k], torch.Tensor):
-        if k.startswith(f"chosen_{mode}"):
-            pad_value = -100 if "labels" in k else 0
-            concatenated_key = k.replace("chosen", "concatenated")
-            if "weight" in k:
-                # print(k)
-                # print(concatenated_key)
-                concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_num_parents, pad_value=pad_value
-                )
-            elif "parent_list" in k:
-                concatenated_batch[concatenated_key] = fast_pad_tensor(
-                    batch[k], max_num_parents, max_span, pad_value=-1
-                )
-            elif ("parent_dict" in k) or ("offset_mapping" in k):
-                concatenated_batch[concatenated_key] = batch[k]
-            else:
-                # print(k)
-                # print(type(batch[k]))
-                concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_length, pad_value=pad_value
-                )
-    for k in keys:
-        # if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
-        if k.startswith(f"rejected_{mode}"):
-            pad_value = -100 if "labels" in k else 0
-            concatenated_key = k.replace("rejected", "concatenated")
-            if "weight" in k:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_num_parents, pad_value=pad_value),
-                    ),
-                    dim=0,
-                )
-            elif "parent_list" in k:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        fast_pad_tensor(batch[k], max_num_parents, max_span, pad_value=-1),
-                    ),
-                    dim=0,
-                )
-            elif ("parent_dict" in k) or ("offset_mapping" in k):
-                concatenated_batch[concatenated_key] += batch[k]
-            else:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_length, pad_value=pad_value),
-                    ),
-                    dim=0,
-                )
-    return concatenated_batch
-
-def compute_logits(
-        batch, teacher_model, mode, config
-    ):  
-        device = next(teacher_model.parameters()).device  # Lấy device của mô hình
-        batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
-        distiller = Distiller(config)
-        model = distiller.student_model.to(device)
-        teacher_model = teacher_model.to(device)
-        with torch.no_grad():
-            teacher_model.eval()
-            teacher_outputs = teacher_model(
-                batch[f"{mode}_teacher_input_ids"],
-                attention_mask=batch[f"{mode}_teacher_attention_mask"],
-                #position_ids=concat_input_data.get(f"teacher_{distiller.teacher_model_type}_position_ids", None), 
-                output_hidden_states=True)
-        
-        #concat_output_data = concatenated_inputs(output_data)
-        target = batch[f"{mode}_student_labels"]
-        teacher_target = batch[f"{mode}_teacher_labels"]
-        
-        pad_mask = target.ne(-100).to(device)
-        teacher_pad_mask = teacher_target.ne(-100).to(device)
-
-        teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
-
-        if hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.embed_tokens
-        elif hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "model") \
-            and hasattr(distiller.student_model.model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.model.embed_tokens
-        elif hasattr(distiller.student_model, "transformer") \
-            and hasattr(distiller.student_model.transformer, "wte"):
-            stu_embed_tokens = distiller.student_model.transformer.wte
-        else:
-            raise NotImplementedError
-
-        if hasattr(teacher_model, "model") \
-            and hasattr(teacher_model.model, "embed_tokens"):
-            tea_embed_tokens = teacher_model.model.embed_tokens
-        elif hasattr(teacher_model, "model") \
-            and hasattr(teacher_model.model, "model") \
-            and hasattr(teacher_model.model.model, "embed_tokens"):
-            tea_embed_tokens = teacher_model.model.model.embed_tokens
-        elif hasattr(teacher_model, "transformer") \
-            and hasattr(teacher_model.model, "wte"):
-            tea_embed_tokens = teacher_model.transformer.wte
-        else:
-            raise NotImplementedError
-
-        formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
-        formal_input = torch.where(pad_mask, batch[f"{mode}_student_input_ids"], torch.zeros_like(target)).to(device)
-        stu_input_embeds = stu_embed_tokens(formal_input).detach().to(device)
-        stu_target_embeds = stu_embed_tokens(formal_target).detach().to(device)
-
-        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
-        formal_teacher_input = torch.where(teacher_pad_mask, batch[f"{mode}_teacher_input_ids"], torch.zeros_like(teacher_target)).to(device)
-        tea_input_embeds = tea_embed_tokens(formal_teacher_input).detach().to(device)
-        tea_target_embeds = tea_embed_tokens(formal_teacher_target).detach().to(device)
-
-        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1).to(device)
-        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1).to(device)
-
-        norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()   
-        norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
-        norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
-
-        print("[DEBUG] stu_index_embeds.device:", stu_index_embeds.device)
-        print("[DEBUG] projector weights device:", next(distiller.projectors["query"].parameters()).device)
-        print("[DEBUG] Expected device:", device)
-
-        distiller.projectors["query"] = distiller.projectors["query"].to(device)
-        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
-        tea_k_hiddens = norm_tea_index_embeds.float().to(device)
-
-        distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
-
-        tea_v_hiddens = distiller.projectors["t2s"](
-            norm_teacher_hiddens + norm_tea_target_embeds
-        ).float().to(device)
-        
-        align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
-        align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
-        align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
-        align = align + (1.0 - align_mask) * (-100000)
-
-        t2s_weight = torch.softmax(align, -1)        
-        t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
-        t2s_logits = t2s_hiddens.matmul(
-            distiller.student_model.lm_head.weight.detach().transpose(-1, -2).to(device)
-        ).to(device)
-        
-        return t2s_logits, target
-
-def token_weight(
+def parent_level_weight(
     positive_model,
     negative_model,
     tokenizer,  # mistralai/Mistral-7B-v0.3
     samples,
-    config,
-    distiller,
     mode="chosen",  # rejected
     batch_size=8,
     mu=1.0,
@@ -241,32 +35,12 @@ def token_weight(
         device = next(positive_model.parameters()).device
     # Create a descriptive prefix for the progress bar
     desc = f"GPU-{process_id}" if process_id is not None else "Processing"
-    
-    '''
-    dataset = DistillDataset(
-        config=config,
-        split="train",  # hoặc "dev", "test"
-        student_tokenizer=...,   # instance của tokenizer student
-        teacher_tokenizers={"mistral": tokenizer}  # teacher model name map → tokenizer
-    )  
-    '''
-
-    collate_fn = CustomCollate(tokenizer)
-    '''
+    collate_fn = get_collate_fn(tokenizer)
     dataloader = DataLoader(
         samples,
         batch_size=batch_size,
         shuffle=False,
         collate_fn=collate_fn,
-        num_workers=2,
-        pin_memory=True,
-    )
-    '''
-    dataloader = DataLoader(
-        samples,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,  # <- dùng hàm collate đã xử lý đầy đủ teacher/student
         num_workers=2,
         pin_memory=True,
     )
@@ -286,13 +60,19 @@ def token_weight(
         # attention_mask_list = [torch.tensor(i) for i in attention_mask]
         # attention_mask_tensor = pad_sequence(attention_mask_list, batch_first=True, padding_value=0)
 
-        logits_1 = compute_logits(batch, positive_model, mode, config)
-        logits_2 = compute_logits(batch, negative_model, mode, config)
+        inputs = {
+            "input_ids": batch[f"{mode}_teacher_input_ids"].to(device),
+            "attention_mask": batch[f"{mode}_teacher_attention_mask"].to(device),
+        }
 
+        with torch.no_grad():
+            logits_1 = positive_model(**inputs).logits
+            logits_2 = negative_model(**inputs).logits
         logits_1 = torch.log_softmax(logits_1, dim=-1).cpu()
         logits_2 = torch.log_softmax(logits_2, dim=-1).cpu()
+        print(f"Logits shape: {logits_1.shape}, {logits_2.shape}")
 
-        labels = batch[f"{mode}_teacher_labels"].cpu()
+        labels = batch[f"{mode}_teacher_labels"]
 
         no_prompt_logits_1, no_prompt_labels = prompt_remove(logits_1, labels)
         no_prompt_logits_2, _ = prompt_remove(logits_2, labels)
@@ -322,14 +102,14 @@ def token_weight(
         #     json.loads(i) for i in parent_token_dicts
         # ]  # since each dict is a string
 
-        token_logps_1 = get_token_logps(
-            no_prompt_logits_1, no_prompt_labels
+        ptoken_logps_1 = get_ptoken_logps(
+            no_prompt_logits_1, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
         )
-        token_logps_2 = get_token_logps(
-            no_prompt_logits_2, no_prompt_labels
+        ptoken_logps_2 = get_ptoken_logps(
+            no_prompt_logits_2, no_prompt_labels, batch[f"{mode}_teacher_parent_list"]
         )
 
-        weights = torch.clamp(token_logps_1 - token_logps_2, L, U)
+        weights = torch.clamp(ptoken_logps_1 - ptoken_logps_2, L, U)
         weights = k * torch.exp(mu * weights)
         weights = torch.round(weights * 100) / 100
         all_weights.extend(weights.tolist())
@@ -356,8 +136,6 @@ def process_dataset_shard(
     positive_model,
     negative_model,
     data_shard,
-    config,
-    distiller,
     batch_size=8,
 ):
     # Set the GPU device - directly select device instead of using environment variable
@@ -378,26 +156,22 @@ def process_dataset_shard(
     print(f"GPU {gpu_id}: Processing {len(data_shard)} examples")
 
     # Pass the device and process ID to calculate_probability_differences
-    rejected_weights = token_weight(
+    rejected_weights = parent_level_weight(
         model_1,
         model_2,
         tokenizer,
         data_shard,
-        config,
-        distiller,
         mode="rejected",
         batch_size=batch_size,
         device=device,
         process_id=gpu_id,
         mu=-1.0,
     )
-    chosen_weights = token_weight(
+    chosen_weights = parent_level_weight(
         model_1,
         model_2,
         tokenizer,
         data_shard,
-        config,
-        distiller,
         mode="chosen",
         batch_size=batch_size,
         device=device,
@@ -438,16 +212,15 @@ def get_output_file(output_dir, file_path):
     return output_file
 
 
-def parallel_process_file(file_path, config):
-    distiller = Distiller(config)
+def parallel_process_file(file_path, args):
     print(f"Processing file: {file_path}")
     # data = load_jsonl(file_path)
 
-    data = load_dataset(file_path, split=config.split)
+    data = load_dataset(file_path, split=args.split)
 
     # Determine number of GPUs to use
     available_gpus = torch.cuda.device_count()
-    num_gpus = min(config.num_gpus, available_gpus)
+    num_gpus = min(args.num_gpus, available_gpus)
     if num_gpus == 0:
         raise RuntimeError("No GPU devices found")
 
@@ -465,7 +238,7 @@ def parallel_process_file(file_path, config):
     print(f"Split data into {len(shards)} shards")
 
     # Force sequential or handle single shard case
-    if config.force_sequential or len(shards) == 1:
+    if args.force_sequential or len(shards) == 1:
         # Sequential processing
         print("Using sequential processing")
         results = []
@@ -473,12 +246,10 @@ def parallel_process_file(file_path, config):
             result = process_dataset_shard(
                 i % available_gpus,
                 file_path,
-                config.positive_model_name,
-                config.negative_model_name,
+                args.model_name_1,
+                args.model_name_2,
                 shards[i],
-                config,
-                distiller,
-                config.batch_size,
+                args.batch_size,
             )
             results.append(result)
         processed_shards = results
@@ -494,12 +265,10 @@ def parallel_process_file(file_path, config):
                     args=(
                         i % available_gpus,
                         file_path,
-                        config.positive_model_name,
-                        config.negative_model_name,
+                        args.model_name_1,
+                        args.model_name_2,
                         shards[i],
-                        config,
-                        distiller,
-                        config.batch_size,
+                        args.batch_size,
                     ),
                 )
                 results.append(result)
@@ -514,11 +283,11 @@ def parallel_process_file(file_path, config):
     processed_data = concatenate_datasets(processed_shards)
 
     # save to HF
-    processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=config.split)
+    processed_data.push_to_hub("tonyshelby/ultra-feedback_weight", split=args.split)
     print("Saved processed data to HF")
     # Save combined results
     # output_file = get_output_file(args.output_dir, file_path)
-    output_dir = os.path.join(config.output_dir, file_path, config.split)
+    output_dir = os.path.join(args.output_dir, file_path, args.split)
     os.makedirs(output_dir, exist_ok=True)
     processed_data.save_to_disk(output_dir)
     # save_jsonl(processed_data, output_file)
@@ -526,17 +295,14 @@ def parallel_process_file(file_path, config):
 
     return output_dir
 
-@hydra.main(version_base=None, config_path=None, config_name="config")
-def main(config):
-    OmegaConf.resolve(config)
-    print("[DEBUG] main started")
+
+def main():
     # Try setting multiprocessing start method to spawn for better CUDA compatibility
     try:
         mp.set_start_method("spawn")
     except RuntimeError:
         print("Multiprocessing start method already set, continuing with existing method")
 
-    '''
     parser = argparse.ArgumentParser(description="Process dataset with models in parallel.")
     parser.add_argument(
         "--positive_model_name", type=str, required=True, help="Path to the first model."
@@ -581,30 +347,29 @@ def main(config):
         action="store_true",
         help="Force sequential processing even with multiple GPUs.",
     )
-    '''
-    
+
+    args = parser.parse_args()
+
     # Verify GPU availability
     available_gpus = torch.cuda.device_count()
     print(f"Found {available_gpus} available GPUs")
     if available_gpus == 0:
         raise RuntimeError("No GPU devices available, but GPUs are required for this script")
-    if config.num_gpus > available_gpus:
+    if args.num_gpus > available_gpus:
         print(
-            f"Warning: Requested {config.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
+            f"Warning: Requested {args.num_gpus} GPUs but only {available_gpus} are available. Using {available_gpus} GPUs."
         )
-        config.num_gpus = available_gpus
+        args.num_gpus = available_gpus
 
     # Process all files in the input directory
     start_time = time.time()
     # all_files = [
-    #     os.path.join(
-    # .input_dir, f) for f in os.listdir(args.input_dir) if f.endswith(".jsonl")
+    #     os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if f.endswith(".jsonl")
     # ]
-    #file_path = args.data_path.split("/")[-1]
-    file_path = config.data_path
+    file_path = args.data_path.split("/")[-1]
     processed_files = []
     # for file_path in all_files:
-    output_dir = parallel_process_file(file_path, config)
+    output_dir = parallel_process_file(file_path, args)
     processed_files.append(output_dir)
 
     elapsed_time = time.time() - start_time
@@ -612,7 +377,6 @@ def main(config):
     print("Processed dirs:")
     for file in processed_files:
         print(f"  {file}")
-
 
 if __name__ == "__main__":
     main()
