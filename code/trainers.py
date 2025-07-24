@@ -425,6 +425,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     ),
                     dim=0,
                 )
+    print(f"[DEBUG] concatenated_batch keys: {list(concatenated_batch.keys())}")
     return concatenated_batch
 
 def load_tokenizer(self, model_type, path):
