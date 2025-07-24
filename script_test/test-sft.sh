@@ -10,10 +10,10 @@ CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"
 ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   --config-dir $CONFIG_DIR \
   --config-name config.yaml \
-  model.policy_name_or_path=Qwen/Qwen2.5-0.5B \
-  model.reference_name_or_path=Qwen/Qwen2.5-0.5B \
-  model.teacher_tokenizer_name_or_path=Qwen/Qwen2.5-0.5B \
-  model.student_tokenizer_name_or_path=Qwen/Qwen2.5-0.5B \
+  model.policy_name_or_path=Qwen/Qwen2.5-7B \
+  model.reference_name_or_path=Qwen/Qwen2.5-7B \
+  model.teacher_tokenizer_name_or_path=Qwen/Qwen2.5-7B \
+  model.student_tokenizer_name_or_path=Qwen/Qwen2.5-7B \
   model.policy_block_name=Qwen2DecoderLayer \
   model.reference_block_name=Qwen2DecoderLayer \
   loss=sft \
