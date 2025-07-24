@@ -67,9 +67,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         self.distiller = distiller
         model = model.to(device)
         teacher_model = reference_model.to(device)
-        print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
-        print("[DEBUG] Vocab size:", model.config.vocab_size)
-        print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
+        #print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
+        #print("[DEBUG] Vocab size:", model.config.vocab_size)
+        #print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
 
         
         
