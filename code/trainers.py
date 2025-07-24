@@ -400,9 +400,9 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     dim=0,
                 )
 
-    weight_keys = [k for k in batch if k.endswith(f"chosen") or k.endswith(f"rejected")]
+    weight_keys = [k for k in batch if k.startswith(f"chosen") or k.startswith(f"rejected")]
     for k in weight_keys:
-        if k.endswith(f"chosen"):
+        if k.startswith(f"chosen"):
             pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("chosen", "concatenated")
             if "weight" in k:
@@ -412,7 +412,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     batch[k], max_length, pad_value=pad_value
                 )
     for k in weight_keys:
-        if k.endswith(f"rejected"):
+        if k.startswith(f"rejected"):
             pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("rejected", "concatenated")
             if "weight" in k:
@@ -425,7 +425,6 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     ),
                     dim=0,
                 )
-    print(f"[DEBUG] concatenated_batch keys: {list(concatenated_batch.keys())}")
     return concatenated_batch
 
 def load_tokenizer(self, model_type, path):
@@ -618,7 +617,7 @@ class BasicTrainer(object):
         reference_all_logits, _ = self.DSKD.compute_dual_space_kd_loss_with_cma(concatenated_batch, teacher_concatenated_batch, distiller, model, reference_model)
         print(f"[tisdpo_concatenated_forward] reference_all_logits shape: {reference_all_logits.shape}")
 
-        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'mean_concatenated'], average_log_prob=False)
+        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
 
         chosen_logps_margin = all_logps_margin[:batch[f'chosen_{mode}_input_ids'].shape[0]]
         rejected_logps_margin = all_logps_margin[batch[f'chosen_{mode}_input_ids'].shape[0]:]
