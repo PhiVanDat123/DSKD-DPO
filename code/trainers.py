@@ -412,7 +412,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                     batch[k], max_length, pad_value=pad_value
                 )
     for k in weight_keys:
-        if k.enswith(f"rejected"):
+        if k.endswith(f"rejected"):
             pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("rejected", "concatenated")
             if "weight" in k:
