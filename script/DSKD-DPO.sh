@@ -22,7 +22,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   reference_mode=teacher \
   eval_every=5 \
   datasets=pvdhihihi/14B-weight-trasformed-v2 \
-  gradient_accumulation_steps=1 batch_size=16 eval_batch_size=8 \
+  gradient_accumulation_steps=1 batch_size=16 eval_batch_size=16 \
   trainer=FSDPTrainer sample_during_eval=false \
 #  save_repo=tonyshelby/Qwen2.5_0.5B_TDPO_DSKD \
 #   model.policy_name_or_path=openai-community/gpt2 \
