@@ -1057,7 +1057,7 @@ class BasicTrainer(object):
                 last_log = time.time()
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
-            #self.save_checkpoint(step=self.example_counter)
+            self.save_checkpoint(step=self.example_counter)
 
     def clip_gradient(self):
         """Clip the gradient norm of the parameters of a non-FSDP policy."""
