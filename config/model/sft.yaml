@@ -9,6 +9,6 @@ student_tokenizer_name_or_path: Qwen/Qwen2.5-1.5B
 policy_block_name: Qwen2DecoderLayer
 reference_block_name: Qwen2DecoderLayer
 
-policy_dtype: float32
+policy_dtype: float16
 fsdp_policy_mp: null
-reference_dtype: null
+reference_dtype: float16
