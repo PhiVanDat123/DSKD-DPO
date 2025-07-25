@@ -18,7 +18,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   model.reference_block_name=Qwen2DecoderLayer \
   loss=sft \
   eval_every=5 \
-  policy_mode=student \
+  policy_mode=teacher \
   datasets=tonyshelby/ultra-feedback_checking \
   gradient_accumulation_steps=2 batch_size=4 eval_batch_size=4 \
   trainer=FSDPTrainer sample_during_eval=false \
