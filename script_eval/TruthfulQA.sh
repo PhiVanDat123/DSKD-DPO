@@ -23,7 +23,7 @@ MODEL_ARGS="pretrained=${MODEL_NAME},tensor_parallel_size=${TP_SIZE},dtype=${DTY
 lm_eval --model vllm \
         --model_args "${MODEL_ARGS}" \
         --tasks "${TASKS}" \
-        --num_fewshot=25 \
+        --num_fewshot=0 \
         --batch_size "${BATCH_SIZE}" \
         --output_path "output/${MODEL_NAME}/${TASKS}" \
         --log_samples \
