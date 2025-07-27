@@ -48,12 +48,6 @@ from typing import Optional, Dict, List, Union, Tuple
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
-'''
-def compute_t2s_logits(self, distiller, config, concat_student_data, concat_teacher_data, model, reference_model):
-    criterion = DualSpaceKDWithCMA(config, padding_id=-100)
-    t2s_logits, _ = criterion.compute_dual_space_kd_loss_with_cma(concat_student_data, concat_teacher_data, distiller, model, reference_model)
-    return t2s_logits
-'''
 
 def _tdpo_get_batch_logps(logits: torch.FloatTensor, reference_logits: torch.FloatTensor, labels: torch.LongTensor,
                           average_log_prob: bool = False):
