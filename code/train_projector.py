@@ -138,6 +138,8 @@ for batch in train_iterator:
     optimizer.step()
     scheduler.step()
 
-# 7. Push lên Hugging Face Hub
-model.push_to_hub("pvdhihihi/llama-student-v1")
-student_tokenizer.push_to_hub("pvdhihihi/llama-student-v1")
+save_directory = "./llama_student_model"
+model.save_pretrained(save_directory)
+student_tokenizer.save_pretrained(save_directory)
+
+print(f"Mô hình và tokenizer đã được lưu tại: {save_directory}")
