@@ -6,7 +6,7 @@ policy_mode: student
 reference_mode: teacher
 
 # number of iterators in training
-train_iterator: 300
+train_iterator: 100
 
 # the batch size for training; for FSDP, the batch size per GPU is batch_size / (grad_accumulation_steps * num_gpus)
 batch_size: 2
