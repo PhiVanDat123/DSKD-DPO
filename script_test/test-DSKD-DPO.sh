@@ -21,7 +21,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   policy_mode=student \
   reference_mode=teacher \
   eval_every=5 \
-  datasets=pvdhihihi/14B-weight-trasformed \
+  datasets=tonyshelby/ultra-feedback_checking \
   gradient_accumulation_steps=2 \
   batch_size=4 \
   eval_batch_size=4 \
