@@ -22,5 +22,8 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   reference_mode=teacher \
   eval_every=5 \
   datasets=pvdhihihi/14B-weight-trasformed \
-  gradient_accumulation_steps=2 batch_size=4 eval_batch_size=4 \
-  trainer=FSDPTrainer sample_during_eval=false
+  gradient_accumulation_steps=2 \
+  batch_size=4 \
+  eval_batch_size=4 \
+  trainer=FSDPTrainer \
+  sample_during_eval=false
