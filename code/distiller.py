@@ -117,7 +117,7 @@ class Distiller(nn.Module):
         }
         '''
         name_dict = {
-            "s": 2048, #1B 
+            "s": 896, #1B 
             "t": 1024, #7B
             "relu": nn.ReLU()
         }
