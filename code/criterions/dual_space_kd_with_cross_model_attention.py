@@ -4,6 +4,7 @@ from .various_divergence import VariousDivergence
 from typing import Dict, List, Union
 from utils.utils import pad_to_length
 from datasets import load_dataset
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
@@ -102,18 +103,18 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         if hasattr(model, "model") \
             and hasattr(model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.embed_tokens.to(device)
+            stu_embed_tokens = model.model.embed_tokens
         elif hasattr(model, "model") \
             and hasattr(model.model, "model") \
             and hasattr(model.model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.model.embed_tokens.to(device)
+            stu_embed_tokens = model.model.model.embed_tokens
         elif hasattr(model, "transformer") \
             and hasattr(model.transformer, "word_embeddings"):
-            stu_embed_tokens = model.transformer.word_embeddings.to(device)
+            stu_embed_tokens = model.transformer.word_embeddings
         else:
             raise NotImplementedError
 
-        #stu_embed_tokens = stu_embed_tokens.to(device)
+        FSDP._materialize_module(stu_embed_tokens)
         print("[dskd] stu_embed_tokens device:", stu_embed_tokens.weight.device)
         '''
         if hasattr(teacher_model, "model") \
