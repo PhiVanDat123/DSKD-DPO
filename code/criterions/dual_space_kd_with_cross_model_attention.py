@@ -111,6 +111,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         else:
             raise NotImplementedError
 
+        '''
         if hasattr(teacher_model, "model") \
             and hasattr(teacher_model.model, "embed_tokens"):
             tea_embed_tokens = teacher_model.model.embed_tokens
@@ -119,10 +120,17 @@ class DualSpaceKDWithCMA(VariousDivergence):
             and hasattr(teacher_model.model.model, "embed_tokens"):
             tea_embed_tokens = teacher_model.model.model.embed_tokens
         elif hasattr(teacher_model, "transformer") \
-            and hasattr(teacher_model.module, "wte"):
+            and hasattr(teacher_model.model, "wte"):
             tea_embed_tokens = teacher_model.transformer.wte
         else:
             raise NotImplementedError
+        '''
+
+        tea_embed_tokens = getattr(
+            getattr(teacher_model, "module", teacher_model).transformer,
+            "word_embeddings"
+        )
+
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
         formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
