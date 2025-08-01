@@ -102,14 +102,14 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         if hasattr(model, "model") \
             and hasattr(model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.embed_tokens
+            stu_embed_tokens = model.model.embed_tokens.to(device)
         elif hasattr(model, "model") \
             and hasattr(model.model, "model") \
             and hasattr(model.model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.model.embed_tokens
+            stu_embed_tokens = model.model.model.embed_tokens.to(device)
         elif hasattr(model, "transformer") \
             and hasattr(model.transformer, "word_embeddings"):
-            stu_embed_tokens = model.transformer.word_embeddings
+            stu_embed_tokens = model.transformer.word_embeddings.to(device)
         else:
             raise NotImplementedError
 
