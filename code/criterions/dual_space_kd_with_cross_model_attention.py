@@ -119,7 +119,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             and hasattr(teacher_model.model.model, "embed_tokens"):
             tea_embed_tokens = teacher_model.model.model.embed_tokens
         elif hasattr(teacher_model, "transformer") \
-            and hasattr(teacher_model.model, "wte"):
+            and hasattr(teacher_model.module, "wte"):
             tea_embed_tokens = teacher_model.transformer.wte
         else:
             raise NotImplementedError
