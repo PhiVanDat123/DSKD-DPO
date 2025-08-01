@@ -114,12 +114,15 @@ class DualSpaceKDWithCMA(VariousDivergence):
         else:
             raise NotImplementedError
 
-        _ = stu_embed_tokens.weight.device
-        print("[dskd] stu_embed_tokens device:", stu_embed_tokens.weight.device)
+        stu_embed_tokens = stu_embed_tokens.to(device)
+        print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
 
+        # FSDP-safe dummy forward để materialize
         with torch.no_grad():
-            _ = stu_embed_tokens(torch.zeros(1, dtype=torch.long, device=device))
+            dummy_input = torch.zeros(1, dtype=torch.long, device=device)
+            _ = stu_embed_tokens(dummy_input)
             print("[dskd] stu_embed_tokens (after dummy forward) device:", stu_embed_tokens.weight.device)
+
         
         '''
         if hasattr(teacher_model, "model") \
