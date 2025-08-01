@@ -114,7 +114,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         stu_embed_tokens = stu_embed_tokens.to(device)
-        print("[dskd] stu_embed_tokens device:", stu_embed_tokens.device)
+        print("[dskd] stu_embed_tokens device:", stu_embed_tokens.weight.device)
         '''
         if hasattr(teacher_model, "model") \
             and hasattr(teacher_model.model, "embed_tokens"):
@@ -135,7 +135,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             "word_embeddings"
         )
         tea_embed_tokens = tea_embed_tokens.to(device)
-        print("[dskd] tea_embed_tokens device:", tea_embed_tokens.device)
+        print("[dskd] tea_embed_tokens device:", tea_embed_tokens.weight.device)
 
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
