@@ -116,6 +116,11 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         _ = stu_embed_tokens.weight.device
         print("[dskd] stu_embed_tokens device:", stu_embed_tokens.weight.device)
+
+        with torch.no_grad():
+            _ = stu_embed_tokens(torch.zeros(1, dtype=torch.long, device=device))
+            print("[dskd] stu_embed_tokens (after dummy forward) device:", stu_embed_tokens.weight.device)
+        
         '''
         if hasattr(teacher_model, "model") \
             and hasattr(teacher_model.model, "embed_tokens"):
