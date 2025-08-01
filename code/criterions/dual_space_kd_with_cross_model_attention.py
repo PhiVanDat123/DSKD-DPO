@@ -66,7 +66,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         #batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}  # Di chuyển các tensor trong batch
         self.distiller = distiller
         model = model.to(device)
+        print("[dskd] Model device:", model.device)
         teacher_model = reference_model.to(device)
+        print("[dskd] Teacher model device:", teacher_model.device)
         #print("[DEBUG] Max input ID:", concat_student_data["concatenated_student_input_ids"].max().item())
         #print("[DEBUG] Vocab size:", model.config.vocab_size)
         #print("[DEBUG] Input IDs shape:", concat_student_data["concatenated_student_input_ids"].shape)
@@ -112,6 +114,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         stu_embed_tokens = stu_embed_tokens.to(device)
+        print("[dskd] stu_embed_tokens device:", stu_embed_tokens.device)
         '''
         if hasattr(teacher_model, "model") \
             and hasattr(teacher_model.model, "embed_tokens"):
@@ -131,10 +134,14 @@ class DualSpaceKDWithCMA(VariousDivergence):
             getattr(teacher_model, "module", teacher_model).transformer,
             "word_embeddings"
         )
+        tea_embed_tokens = tea_embed_tokens.to(device)
+        print("[dskd] tea_embed_tokens device:", tea_embed_tokens.device)
 
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
+        print("[dskd] formal_target device:", formal_target.device)
         formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
+        print("[dskd] formal_input device:", formal_input.device)
         stu_input_embeds = stu_embed_tokens(formal_input).detach().to(device)   
         stu_target_embeds = stu_embed_tokens(formal_target).detach().to(device)
 
