@@ -114,7 +114,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         else:
             raise NotImplementedError
 
-        _ = next(stu_embed_tokens.parameters()).to("cuda")
+        _ = stu_embed_tokens.weight.device
         print("[dskd] stu_embed_tokens device:", stu_embed_tokens.weight.device)
         '''
         if hasattr(teacher_model, "model") \
