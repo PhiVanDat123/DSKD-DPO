@@ -20,7 +20,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   loss=tisdpo \
   policy_mode=student \
   reference_mode=teacher \
-  eval_every=500 \
+  total_steps=8000 warmup_steps=1000 eval_every=500 \
   datasets=pvdhihihi/7B-weight-trasformed-v3 \
   gradient_accumulation_steps=1 batch_size=8 eval_batch_size=8 \
   trainer=FSDPTrainer sample_during_eval=false \
