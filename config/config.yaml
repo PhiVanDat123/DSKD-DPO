@@ -89,6 +89,7 @@ optimizer: SGD #AdamW #RMSprop
 
 # number of linear warmup steps for the learning rate
 warmup_steps: 150
+total_steps: 400
 
 # whether or not to use activation/gradient checkpointing
 activation_checkpointing: false
