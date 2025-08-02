@@ -1252,7 +1252,7 @@ class FSDPTrainer(BasicTrainer):
         dist.barrier()
     
     def save_checkpoint(self, step: int, output_dir: Optional[str] = None):
-        save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        save_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=True)
         with FSDP.state_dict_type(
             self.policy, StateDictType.FULL_STATE_DICT, state_dict_config=save_policy
         ):
