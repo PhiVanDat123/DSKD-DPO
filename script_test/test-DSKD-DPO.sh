@@ -20,7 +20,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   loss=tisdpo \
   policy_mode=student \
   reference_mode=teacher \
-  eval_every=5 \
+  eval_every=500 \
   datasets=tonyshelby/ultra-feedback_checking \
   gradient_accumulation_steps=2 \
   batch_size=4 \
