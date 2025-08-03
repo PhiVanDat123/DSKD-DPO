@@ -967,7 +967,14 @@ class BasicTrainer(object):
                         wandb.log({"policy_samples": policy_text_table}, step=self.example_counter)
                         if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
                             wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
-                self.save_checkpoint(step=self.batch_counter)
+                #self.save_checkpoint(step=self.batch_counter)
+                if (
+                        self.config.save_checkpoint
+                        and (int(self.example_counter / 10) % self.config.eval_every) == 0
+                ):
+                    self.save_checkpoint(
+                        step=self.batch_counter, output_dir="/mnt/data/ngannt61"
+                    )
             #### END EVALUATION ####
         
             ### === Phase 1: Train Projector ===

@@ -16,6 +16,7 @@ eval_batch_size: 16
 
 # debug mode (disables wandb, model checkpointing, etc.)
 debug: false
+save_checkpoint: true
 
 # the port to use for FSDP
 fsdp_port: null
