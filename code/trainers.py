@@ -973,7 +973,7 @@ class BasicTrainer(object):
                         and (int(self.example_counter / 10) % self.config.eval_every) == 0
                 ):
                     self.save_checkpoint(
-                        step=self.batch_counter, output_dir="/mnt/data/ngannt61"
+                        step=self.batch_counter
                     )
             #### END EVALUATION ####
         
