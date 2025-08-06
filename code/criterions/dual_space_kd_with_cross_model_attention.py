@@ -145,6 +145,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             print("[dskd] formal_target device:", formal_target.device)
             formal_input = torch.where(pad_mask, concat_student_data["concatenated_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
             print("[dskd] formal_input device:", formal_input.device)
+            print("formal_input:", formal_input)
             stu_input_embeds = stu_embed_tokens(formal_input).contiguous().clone().detach()   
             stu_target_embeds = stu_embed_tokens(formal_target).contiguous().clone().detach().to(device)
 
@@ -282,6 +283,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             print("[dskd] formal_target device:", formal_target.device)
             formal_input = torch.where(pad_mask, batch["chosen_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
             print("[dskd] formal_input device:", formal_input.device)
+            print("formal_input:", formal_input)
             stu_input_embeds = stu_embed_tokens(formal_input).contiguous().clone().detach()   
             stu_target_embeds = stu_embed_tokens(formal_target).contiguous().clone().detach().to(device)
 
