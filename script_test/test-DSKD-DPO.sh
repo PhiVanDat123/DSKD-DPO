@@ -22,7 +22,7 @@ ${CONDA_PREFIX}/bin/python -u ../code/train.py \
   reference_mode=teacher \
   eval_every=10 \
   datasets=tonyshelby/ultra-feedback_checking \
-  gradient_accumulation_steps=2 \
+  gradient_accumulation_steps=1 \
   batch_size=4 \
   eval_batch_size=4 \
   trainer=FSDPTrainer \
