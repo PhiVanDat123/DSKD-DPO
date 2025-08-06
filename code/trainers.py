@@ -514,6 +514,16 @@ class BasicTrainer(object):
             num_workers=2,
             drop_last=True,
         )
+        self.pretrain_iterator = DataLoader(
+            self.train_dataset,
+            batch_size=config.batch_size,
+            shuffle=True,
+            #collate_fn=get_collate_fn(self.tokenizer),
+            collate_fn=CustomCollate(self.tokenizer),
+            pin_memory=True,
+            num_workers=2,
+            drop_last=True,
+        )
         rank0_print("Loaded train data iterator")
         # self.train_iterator = get_batch_iterator(
         #     **data_iterator_kwargs,
@@ -909,7 +919,7 @@ class BasicTrainer(object):
         self.batch_counter = 0
         last_log = None
 
-        for batch in self.train_iterator:
+        for batch in self.pretrain_iterator:
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
                     param.requires_grad = False
