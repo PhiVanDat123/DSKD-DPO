@@ -117,6 +117,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             stu_embed_tokens = stu_embed_tokens.to(device)
             print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
             print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
+            print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
 
             '''
             if hasattr(teacher_model, "model") \
@@ -256,6 +257,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             stu_embed_tokens = stu_embed_tokens.to(device)
             print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
             print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
+            print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
 
             '''
             if hasattr(teacher_model, "model") \
