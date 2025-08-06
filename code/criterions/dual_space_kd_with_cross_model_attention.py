@@ -119,6 +119,18 @@ class DualSpaceKDWithCMA(VariousDivergence):
             print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
             print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
 
+            if stu_embed_tokens.weight.is_meta or stu_embed_tokens.weight.storage().size() == 0:
+                print("[WARNING] stu_embed_tokens.weight is meta or uninitialized — forcing allocation without overwriting weights")
+                with torch.no_grad():
+                # Lấy lại weight từ chính mô hình (nếu đã load từ checkpoint)
+                    for name, param in model.named_parameters():
+                        if "embed_tokens.weight" in name and not param.is_meta:
+                            print(f"[INFO] Found initialized weight from: {name}")
+                            stu_embed_tokens.weight = torch.nn.Parameter(param.detach().clone().to(device))
+                            break
+                    else:
+                        raise RuntimeError("Could not find initialized embed_tokens.weight in model — check if model is loaded correctly.")
+
             '''
             if hasattr(teacher_model, "model") \
                 and hasattr(teacher_model.model, "embed_tokens"):
@@ -258,6 +270,18 @@ class DualSpaceKDWithCMA(VariousDivergence):
             print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
             print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
             print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
+
+            if stu_embed_tokens.weight.is_meta or stu_embed_tokens.weight.storage().size() == 0:
+                print("[WARNING] stu_embed_tokens.weight is meta or uninitialized — forcing allocation without overwriting weights")
+                with torch.no_grad():
+                # Lấy lại weight từ chính mô hình (nếu đã load từ checkpoint)
+                    for name, param in model.named_parameters():
+                        if "embed_tokens.weight" in name and not param.is_meta:
+                            print(f"[INFO] Found initialized weight from: {name}")
+                            stu_embed_tokens.weight = torch.nn.Parameter(param.detach().clone().to(device))
+                            break
+                    else:
+                        raise RuntimeError("Could not find initialized embed_tokens.weight in model — check if model is loaded correctly.")
 
             '''
             if hasattr(teacher_model, "model") \
