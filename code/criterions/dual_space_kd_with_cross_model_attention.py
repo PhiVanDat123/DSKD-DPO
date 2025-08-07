@@ -131,7 +131,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
                     else:
                         raise RuntimeError("Could not find initialized embed_tokens.weight in model — check if model is loaded correctly.")
 
-            
+            '''
             if hasattr(teacher_model, "model") \
                 and hasattr(teacher_model.model, "embed_tokens"):
                 tea_embed_tokens = teacher_model.model.embed_tokens
@@ -144,13 +144,13 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 tea_embed_tokens = teacher_model.transformer.wte
             else:
                 raise NotImplementedError
-            
             '''
+            
             tea_embed_tokens = getattr(
                 getattr(teacher_model, "module", teacher_model).transformer,
                 "word_embeddings"
             )
-            '''
+            
             tea_embed_tokens = tea_embed_tokens.to(device)
             print("[dskd] tea_embed_tokens device:", tea_embed_tokens.weight.device)
             
@@ -283,7 +283,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
                     else:
                         raise RuntimeError("Could not find initialized embed_tokens.weight in model — check if model is loaded correctly.")
 
-            
+            '''
             if hasattr(teacher_model, "model") \
                 and hasattr(teacher_model.model, "embed_tokens"):
                 tea_embed_tokens = teacher_model.model.embed_tokens
@@ -296,13 +296,13 @@ class DualSpaceKDWithCMA(VariousDivergence):
                 tea_embed_tokens = teacher_model.transformer.wte
             else:
                 raise NotImplementedError
-            
             '''
+            
             tea_embed_tokens = getattr(
                 getattr(teacher_model, "module", teacher_model).transformer,
                 "word_embeddings"
             )
-            '''
+            
             tea_embed_tokens = tea_embed_tokens.to(device)
             print("[dskd] tea_embed_tokens device:", tea_embed_tokens.weight.device)
             
