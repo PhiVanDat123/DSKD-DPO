@@ -919,33 +919,6 @@ class BasicTrainer(object):
         self.batch_counter = 0
         last_log = None
 
-        for batch in self.pretrain_iterator:
-            if config.loss.name in {'tisdpo'}:
-                for param in self.policy.parameters():
-                    param.requires_grad = False
-                self.distiller.projectors.train()
-
-                self.projector_optimizer.zero_grad()
-                for microbatch_idx in range(self.config.gradient_accumulation_steps):
-                    #print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
-                    global_microbatch = slice_and_move_batch_for_device(
-                        batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
-                    )
-                    local_microbatch = slice_and_move_batch_for_device(
-                        global_microbatch, self.rank, self.world_size, self.rank
-                    )
-                    #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
-                    concat_student_data = concatenated_inputs(local_microbatch, mode='student')
-                    concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
-                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
-
-                    #  Projector loss vẫn cần tính gradient
-                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
-                    (projector_loss / self.config.gradient_accumulation_steps).backward()
-
-                self.projector_optimizer.step()
-                self.projector_scheduler.step()
-
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
             #### BEGIN EVALUATION ####
@@ -1013,7 +986,7 @@ class BasicTrainer(object):
                         step=self.batch_counter
                     )
             #### END EVALUATION ####
-        
+            '''
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
@@ -1040,7 +1013,7 @@ class BasicTrainer(object):
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-
+            '''
             ### === Phase 2: Train Student Model ===
             for param in self.distiller.projectors.parameters():
                 param.requires_grad = False
@@ -1063,6 +1036,11 @@ class BasicTrainer(object):
                     mode="student",
                     train=True
                 )
+                if config.loss.name in {'tisdpo'}:
+                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
+                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
+                    loss = loss + projector_loss
+
                 print(f"[train] loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
                 (loss / self.config.gradient_accumulation_steps).backward()
 
