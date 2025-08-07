@@ -139,8 +139,8 @@ def tisdpo_loss(chosen_logps_margin: torch.FloatTensor,
                 rejected_position_kl: torch.FloatTensor,
                 beta: float, alpha: float = 0.5, token_level: bool = False) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
     if token_level:
-        chosen_values = chosen_logps_margin - chosen_position_kl
-        rejected_values = rejected_logps_margin - rejected_position_kl
+        chosen_values = chosen_logps_margin #- chosen_position_kl
+        rejected_values = rejected_logps_margin #- rejected_position_kl
     else:
         chosen_values = chosen_logps_margin
         rejected_values = rejected_logps_margin
@@ -148,7 +148,7 @@ def tisdpo_loss(chosen_logps_margin: torch.FloatTensor,
     chosen_rejected_logps_margin = chosen_logps_margin - rejected_logps_margin
 
     if token_level:
-        logits = chosen_rejected_logps_margin - alpha * (chosen_position_kl - rejected_position_kl)  
+        logits = chosen_rejected_logps_margin #- alpha * (chosen_position_kl - rejected_position_kl)  
     else:
         logits = chosen_rejected_logps_margin
 
@@ -986,7 +986,7 @@ class BasicTrainer(object):
                         step=self.batch_counter
                     )
             #### END EVALUATION ####
-            '''
+            
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
@@ -1013,7 +1013,7 @@ class BasicTrainer(object):
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-            '''
+
             ### === Phase 2: Train Student Model ===
             for param in self.distiller.projectors.parameters():
                 param.requires_grad = False
@@ -1036,11 +1036,12 @@ class BasicTrainer(object):
                     mode="student",
                     train=True
                 )
+                '''
                 if config.loss.name in {'tisdpo'}:
                     t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
                     projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
                     loss = loss + projector_loss
-
+                '''
                 print(f"[train] loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
                 (loss / self.config.gradient_accumulation_steps).backward()
 
