@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 from utils.utils import pad_to_length
 from datasets import load_dataset
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from contextlib import nullcontext
+from contextlib import nullcontext, ExitStack
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
@@ -335,168 +335,180 @@ class DualSpaceKDWithCMA(VariousDivergence):
         
         return t2s_logits, target
     '''
-    def compute_dual_space_kd_loss_with_cma(
-        self, batch, distiller, model, reference_model
-    ):
-        device = next(model.parameters()).device  # Lấy device của mô hình
-        self.distiller = distiller
-        # Không ép toàn bộ model.to(device) nếu model được FSDP bọc
-        model = model.to(device) if not getattr(model, "is_fsdp_managed", False) else model
-        print("[dskd] Model device:", device)
-        teacher_model = reference_model.to(device)
-        print("[dskd] Teacher model device:", next(teacher_model.parameters()).device)
+def compute_dual_space_kd_loss_with_cma(
+    self, batch, distiller, model, reference_model
+):
+    device = next(model.parameters()).device  # Lấy device của mô hình
+    self.distiller = distiller
+    # Nếu bạn có cờ quản lý FSDP ở nơi khác, giữ nguyên; còn không thì .to(device) như thường
+    model = model.to(device) if not getattr(model, "is_fsdp_managed", False) else model
+    print("[dskd] Model device:", device)
+    teacher_model = reference_model.to(device)
+    print("[dskd] Teacher model device:", next(teacher_model.parameters()).device)
 
-        teacher_model.eval()
-        teacher_outputs = teacher_model(
-            batch["chosen_teacher_input_ids"].to(device),
-            attention_mask=batch[f"chosen_teacher_attention_mask"].to(device),
-            output_hidden_states=True
-        )
+    teacher_model.eval()
+    teacher_outputs = teacher_model(
+        batch["chosen_teacher_input_ids"].to(device),
+        attention_mask=batch[f"chosen_teacher_attention_mask"].to(device),
+        output_hidden_states=True
+    )
 
-        target = batch["chosen_student_labels"].to(device)
-        teacher_target = batch["chosen_teacher_labels"].to(device)
+    target = batch["chosen_student_labels"].to(device)
+    teacher_target = batch["chosen_teacher_labels"].to(device)
 
-        pad_mask = target.ne(self.padding_id).to(device)
-        teacher_pad_mask = teacher_target.ne(self.padding_id).to(device)
+    pad_mask = target.ne(self.padding_id).to(device)
+    teacher_pad_mask = teacher_target.ne(self.padding_id).to(device)
 
-        teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
+    teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
 
-        # --- locate student embedding module robustly ---
-        if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.embed_tokens
-        elif hasattr(model, "model") and hasattr(model.model, "model") and hasattr(model.model.model, "embed_tokens"):
-            stu_embed_tokens = model.model.model.embed_tokens
-        elif hasattr(model, "transformer") and hasattr(model.transformer, "word_embeddings"):
-            stu_embed_tokens = model.transformer.word_embeddings
+    # --- locate student embedding module robustly ---
+    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+        stu_embed_tokens = model.model.embed_tokens
+    elif hasattr(model, "model") and hasattr(model.model, "model") and hasattr(model.model.model, "embed_tokens"):
+        stu_embed_tokens = model.model.model.embed_tokens
+    elif hasattr(model, "transformer") and hasattr(model.transformer, "word_embeddings"):
+        stu_embed_tokens = model.transformer.word_embeddings
+    else:
+        raise NotImplementedError("Không tìm thấy embedding của student model")
+
+    # --- locate teacher embedding ---
+    tea_embed_tokens = getattr(
+        getattr(teacher_model, "module", teacher_model).transformer,
+        "word_embeddings"
+    )
+
+    # cố gắng move projectors nếu cần
+    try:
+        distiller.projectors.to(device)
+    except Exception:
+        for k, m in distiller.projectors.items():
+            try:
+                m.to(device)
+            except Exception:
+                pass
+
+    # check meta status (an toàn nếu attribute không tồn tại)
+    def _is_meta(m):
+        try:
+            return getattr(m.weight, "is_meta", False)
+        except Exception:
+            return False
+
+    is_meta_stu = _is_meta(stu_embed_tokens)
+    is_meta_tea = _is_meta(tea_embed_tokens)
+
+    print("[dskd] stu_embed_tokens.weight.is_meta:", is_meta_stu)
+    print("[dskd] tea_embed_tokens.weight.is_meta:", is_meta_tea)
+
+    # Prepare formal inputs (on device)
+    formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
+    formal_input = torch.where(pad_mask, batch["chosen_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
+    formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
+    formal_teacher_input = torch.where(teacher_pad_mask, batch[f"chosen_teacher_input_ids"].to(device), torch.zeros_like(teacher_target)).to(device)
+
+    # Try to import FSDP; if not available, we'll just use nullcontext
+    try:
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        have_fsdp = True
+    except Exception:
+        FSDP = None
+        have_fsdp = False
+
+    # Build contexts: prefer summoning on top-level wrappers with recurse=True
+    stack = ExitStack()
+    ctx = nullcontext()
+    try:
+        if have_fsdp and (is_meta_stu or is_meta_tea):
+            # summon on top-level student model if meta or on teacher if meta
+            top_model = getattr(model, "module", model)
+            top_teacher = getattr(teacher_model, "module", teacher_model)
+
+            # If both meta, summon both; else summon whichever needed.
+            if is_meta_stu:
+                # recurse=True to ensure submodules (embed) get materialized
+                stack.enter_context(FSDP.summon_full_params(top_model, writeback=False, recurse=True))
+            if is_meta_tea:
+                stack.enter_context(FSDP.summon_full_params(top_teacher, writeback=False, recurse=True))
+            ctx = stack
         else:
-            raise NotImplementedError("Không tìm thấy embedding của student model")
-
-        # --- locate teacher embedding (your previous approach) ---
-        tea_embed_tokens = getattr(
-            getattr(teacher_model, "module", teacher_model).transformer,
-            "word_embeddings"
-        )
-
-        # cố gắng move projectors nếu cần
-        try:
-            distiller.projectors.to(device)
-        except Exception:
-            for k, m in distiller.projectors.items():
-                try:
-                    m.to(device)
-                except Exception:
-                    pass
-
-        # check meta status
-        try:
-            is_meta_stu = getattr(stu_embed_tokens.weight, "is_meta", False)
-            is_meta_tea = getattr(tea_embed_tokens.weight, "is_meta", False)
-        except Exception:
-            is_meta_stu = False
-            is_meta_tea = False
-
-        print("[dskd] stu_embed_tokens.weight.is_meta:", is_meta_stu)
-        print("[dskd] tea_embed_tokens.weight.is_meta:", is_meta_tea)
-
-        # Prepare formal inputs (on device)
-        formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
-        formal_input = torch.where(pad_mask, batch["chosen_student_input_ids"].to(device), torch.zeros_like(target)).to(device)
-        formal_teacher_target = torch.where(teacher_pad_mask, teacher_target, torch.zeros_like(teacher_target)).to(device)
-        formal_teacher_input = torch.where(teacher_pad_mask, batch[f"chosen_teacher_input_ids"].to(device), torch.zeros_like(teacher_target)).to(device)
-
-        # If embeddings are meta (or managed by FSDP), use summon_full_params on a sensible scope.
-        # Try to import FSDP; if not available, use a nullcontext.
-        try:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-            have_fsdp = True
-        except Exception:
-            FSDP = None
-            have_fsdp = False
-
-        # Decide context manager: try to summon on the smallest reasonable scope.
-        ctxs = []
-
-        if have_fsdp and is_meta_stu:
-            # prefer summon on stu_embed_tokens if it's an FSDP instance, else summon on top-level model
-            if isinstance(stu_embed_tokens, FSDP):
-                ctxs.append(FSDP.summon_full_params(stu_embed_tokens, writeback=False))
-            else:
-                # summon params for the top-level model (makes embeddings materialize)
-                top_model = getattr(model, "module", model)
-                ctxs.append(FSDP.summon_full_params(top_model, writeback=False))
-
-        if have_fsdp and is_meta_tea:
-            if isinstance(tea_embed_tokens, FSDP):
-                ctxs.append(FSDP.summon_full_params(tea_embed_tokens, writeback=False))
-            else:
-                top_teacher = getattr(teacher_model, "module", teacher_model)
-                ctxs.append(FSDP.summon_full_params(top_teacher, writeback=False))
-
-        # if no FSDP summon needed, use nullcontext
-        if not ctxs:
             ctx = nullcontext()
-        else:
-            # nest contexts if multiple
-            # simple approach: use the first ctx (summon on top-level model usually enough)
-            ctx = ctxs[0]
 
         # Now do embedding lookups inside the chosen context
         with ctx:
+            # After summon, double-check that weights are not meta anymore
+            is_meta_stu_after = _is_meta(stu_embed_tokens)
+            is_meta_tea_after = _is_meta(tea_embed_tokens)
+            print("[dskd] after summon stu is_meta:", is_meta_stu_after, " tea is_meta:", is_meta_tea_after)
+
+            if is_meta_stu_after or is_meta_tea_after:
+                # If still meta, this likely means checkpoint not loaded or wrong module was summoned.
+                raise RuntimeError(
+                    "Embedding weight vẫn là meta sau summon. "
+                    "Hãy chắc chắn bạn đã load checkpoint materialized weights trước khi gọi loss, "
+                    "hoặc summon đúng FSDP wrapper. (stu_meta={}, tea_meta={})".format(is_meta_stu_after, is_meta_tea_after)
+                )
+
             with torch.no_grad():
-                # If embedding module is on meta but summon worked, now weight should be allocated.
-                # Avoid .to() on module itself; ensure inputs are on device and cast outputs to device.
+                # Do not call .to() on embedding modules themselves; inputs are on device
                 stu_input_embeds = stu_embed_tokens(formal_input).clone()
                 stu_target_embeds = stu_embed_tokens(formal_target).clone()
                 tea_input_embeds = tea_embed_tokens(formal_teacher_input).clone()
                 tea_target_embeds = tea_embed_tokens(formal_teacher_target).clone()
 
-        # Make sure embeddings are on the target device
-        stu_input_embeds = stu_input_embeds.to(device)
-        stu_target_embeds = stu_target_embeds.to(device)
-        tea_input_embeds = tea_input_embeds.to(device)
-        tea_target_embeds = tea_target_embeds.to(device)
+    finally:
+        # close any contexts
+        try:
+            stack.close()
+        except Exception:
+            pass
 
-        # combine and normalize as before
-        stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1).to(device)
-        tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1).to(device)
+    # Ensure embeddings are on the expected device (safety)
+    stu_input_embeds = stu_input_embeds.to(device)
+    stu_target_embeds = stu_target_embeds.to(device)
+    tea_input_embeds = tea_input_embeds.to(device)
+    tea_target_embeds = tea_target_embeds.to(device)
 
-        norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()
-        norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
-        norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
+    # combine and normalize as before
+    stu_index_embeds = torch.cat([stu_input_embeds, stu_target_embeds], -1).to(device)
+    tea_index_embeds = torch.cat([tea_input_embeds, tea_target_embeds], -1).to(device)
 
-        print("stu_index_embeds.shape:", stu_index_embeds.shape)
-        print("tea_index_embeds.shape:", tea_index_embeds.shape)
-        print("projectors['query']:", distiller.projectors["query"])
+    norm_tea_index_embeds = tea_index_embeds / tea_index_embeds.std()
+    norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
+    norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        distiller.projectors["query"] = distiller.projectors["query"].to(device)
-        stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
-        tea_k_hiddens = norm_tea_index_embeds.float().to(device)
+    print("stu_index_embeds.shape:", stu_index_embeds.shape)
+    print("tea_index_embeds.shape:", tea_index_embeds.shape)
+    print("projectors['query']:", distiller.projectors["query"])
 
-        print("projectors['t2s']:", distiller.projectors["t2s"])
-        print("(norm_teacher_hiddens + norm_tea_target_embeds).shape:", (norm_teacher_hiddens + norm_tea_target_embeds).shape)
+    distiller.projectors["query"] = distiller.projectors["query"].to(device)
+    stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
+    tea_k_hiddens = norm_tea_index_embeds.float().to(device)
 
-        distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
-        tea_v_hiddens = distiller.projectors["t2s"](
-            norm_teacher_hiddens + norm_tea_target_embeds
-        ).float().to(device)
+    print("projectors['t2s']:", distiller.projectors["t2s"])
+    print("(norm_teacher_hiddens + norm_tea_target_embeds).shape:", (norm_teacher_hiddens + norm_tea_target_embeds).shape)
 
-        print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
-        print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
-        align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
-        align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
-        align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
-        align = align + (1.0 - align_mask) * (-100000)
-        print("[DEBUG] align shape:", align.shape)
+    distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
+    tea_v_hiddens = distiller.projectors["t2s"](
+        norm_teacher_hiddens + norm_tea_target_embeds
+    ).float().to(device)
 
-        t2s_weight = torch.softmax(align, -1)
-        print("[DEBUG] t2s_weight shape:", t2s_weight.shape)
-        print("[DEBUG] tea_v_hiddens shape:", tea_v_hiddens.shape)
-        t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
-        print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
-        print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
-        t2s_logits = t2s_hiddens.matmul(
-            model.lm_head.weight.detach().transpose(-1, -2).to(device)
-        ).to(device)
-        print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
+    print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
+    print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
+    align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
+    align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
+    align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
+    align = align + (1.0 - align_mask) * (-100000)
+    print("[DEBUG] align shape:", align.shape)
 
-        return t2s_logits, target
+    t2s_weight = torch.softmax(align, -1)
+    print("[DEBUG] t2s_weight shape:", t2s_weight.shape)
+    print("[DEBUG] tea_v_hiddens shape:", tea_v_hiddens.shape)
+    t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
+    print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
+    print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
+    t2s_logits = t2s_hiddens.matmul(
+        model.lm_head.weight.detach().transpose(-1, -2).to(device)
+    ).to(device)
+    print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
+
+    return t2s_logits, target
