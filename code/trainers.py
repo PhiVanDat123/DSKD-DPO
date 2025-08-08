@@ -959,7 +959,7 @@ class BasicTrainer(object):
                     rank0_print(f"[Pretrain Projector] step {pretrain_step}, loss: {projector_loss.item():.4f}")
 
             rank0_print("Projector pretraining completed.")
-
+        '''
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
             #### BEGIN EVALUATION ####
@@ -1077,12 +1077,7 @@ class BasicTrainer(object):
                     mode="student",
                     train=True
                 )
-                '''
-                if config.loss.name in {'tisdpo'}:
-                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
-                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
-                    loss = loss + projector_loss
-                '''
+        
                 print(f"[train] loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
                 (loss / self.config.gradient_accumulation_steps).backward()
 
@@ -1116,7 +1111,7 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #self.save_checkpoint(step=self.example_counter)
-
+        '''
     def clip_gradient(self):
         """Clip the gradient norm of the parameters of a non-FSDP policy."""
         return torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.config.max_grad_norm).item()
