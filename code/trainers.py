@@ -944,7 +944,7 @@ class BasicTrainer(object):
 
                     for k, v in eval_metrics.items():
                         all_eval_metrics[k].extend(v)
-
+                '''
                 if self.config.sample_during_eval:
                     if self.config.n_eval_model_samples < self.config.eval_batch_size:
                         rank0_print(f'Warning: n_eval_model_samples ({self.config.n_eval_model_samples}) < eval_batch_size ({self.config.eval_batch_size}). Sampling from the first complete eval batch of prompts.')
@@ -988,7 +988,7 @@ class BasicTrainer(object):
                         step=self.batch_counter
                     )
             #### END EVALUATION ####
-            
+                '''
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
@@ -1008,15 +1008,15 @@ class BasicTrainer(object):
                     #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
                     concat_student_data = concatenated_inputs(local_microbatch, mode='student')
                     concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
+                    print("[trainer] num_iter:", num_iter)
                     t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
-
                     #  Projector loss vẫn cần tính gradient
                     projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
                     (projector_loss / self.config.gradient_accumulation_steps).backward()
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-                print("[trainer] num_iter:", num_iter)
+                
 
         '''
         for batch in self.train_iterator:
