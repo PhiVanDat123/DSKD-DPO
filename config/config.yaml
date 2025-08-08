@@ -156,6 +156,6 @@ data_path: "tonyshelby/ultra-feedback_checking"
 defaults:
 - _self_
 - model: sft # basic model configuration
-- loss: sft # which loss function, either sft or dpo (specify loss.beta if using dpo)
+- loss: tisdpo # which loss function, either sft or dpo (specify loss.beta if using dpo)
 #- transform_config: default # which transform configuration to use
 #- transform@transform: default 
