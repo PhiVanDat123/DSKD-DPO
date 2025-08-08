@@ -139,8 +139,8 @@ def tisdpo_loss(chosen_logps_margin: torch.FloatTensor,
                 rejected_position_kl: torch.FloatTensor,
                 beta: float, alpha: float = 0.5, token_level: bool = False) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
     if token_level:
-        chosen_values = chosen_logps_margin #- chosen_position_kl
-        rejected_values = rejected_logps_margin #- rejected_position_kl
+        chosen_values = chosen_logps_margin - chosen_position_kl
+        rejected_values = rejected_logps_margin - rejected_position_kl
     else:
         chosen_values = chosen_logps_margin
         rejected_values = rejected_logps_margin
@@ -148,7 +148,7 @@ def tisdpo_loss(chosen_logps_margin: torch.FloatTensor,
     chosen_rejected_logps_margin = chosen_logps_margin - rejected_logps_margin
 
     if token_level:
-        logits = chosen_rejected_logps_margin #- alpha * (chosen_position_kl - rejected_position_kl)  
+        logits = chosen_rejected_logps_margin - alpha * (chosen_position_kl - rejected_position_kl)  
     else:
         logits = chosen_rejected_logps_margin
 

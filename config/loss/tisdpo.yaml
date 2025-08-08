@@ -13,6 +13,6 @@ label_smoothing: 0
 # if true, use a uniform (maximum entropy) reference model
 reference_free: false
 
-token_level: false
+token_level: true
 
 alpha: 0.5
