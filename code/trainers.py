@@ -991,8 +991,6 @@ class BasicTrainer(object):
             '''
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
-                for param in self.policy.parameters():
-                    param.requires_grad = False
                 self.distiller.projectors.train()
 
                 self.projector_optimizer.zero_grad()
