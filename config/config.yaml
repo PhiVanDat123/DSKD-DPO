@@ -143,6 +143,7 @@ teacher_peft_path: None
 projector_path: None
 
 projector_warmup_steps: 1000
+projector_pretrain_steps: 100
 
 #weights
 split: "train"

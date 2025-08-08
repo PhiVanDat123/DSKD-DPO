@@ -919,6 +919,47 @@ class BasicTrainer(object):
         self.batch_counter = 0
         last_log = None
 
+        # ======= Phase 0: Pretrain Projector =======
+        if config.loss.name in {'tisdpo'} and getattr(self.config, "projector_pretrain_steps", 0) > 0:
+            rank0_print(f"Starting projector pretraining for {self.config.projector_pretrain_steps} steps...")
+            for param in self.policy.parameters():
+                param.requires_grad = False
+            self.distiller.projectors.train()
+
+            pretrain_step = 0
+            projector_train_iterator = iter(self.train_iterator)
+
+            while pretrain_step < self.config.projector_pretrain_steps:
+                try:
+                    batch = next(projector_train_iterator)
+                except StopIteration:
+                    projector_train_iterator = iter(self.train_iterator)
+                    batch = next(projector_train_iterator)
+
+                self.projector_optimizer.zero_grad()
+                for microbatch_idx in range(self.config.gradient_accumulation_steps):
+                    global_microbatch = slice_and_move_batch_for_device(
+                        batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
+                    )
+                    local_microbatch = slice_and_move_batch_for_device(
+                        global_microbatch, self.rank, self.world_size, self.rank
+                    )
+
+                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(
+                        local_microbatch, self.distiller, self.policy, self.reference_model
+                    )
+                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
+                    (projector_loss / self.config.gradient_accumulation_steps).backward()
+
+                self.projector_optimizer.step()
+                self.projector_scheduler.step()
+
+                pretrain_step += 1
+                if pretrain_step % 10 == 0:
+                    rank0_print(f"[Pretrain Projector] step {pretrain_step}, loss: {projector_loss.item():.4f}")
+
+            rank0_print("Projector pretraining completed.")
+
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
             #### BEGIN EVALUATION ####
