@@ -922,6 +922,7 @@ class BasicTrainer(object):
         # ======= Phase 0: Pretrain Projector =======
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
+            '''
             #### BEGIN EVALUATION ####
             if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
                 rank0_print(f'Running evaluation after {self.example_counter} train examples')
@@ -987,7 +988,7 @@ class BasicTrainer(object):
                         step=self.batch_counter
                     )
             #### END EVALUATION ####
-            
+            '''
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
