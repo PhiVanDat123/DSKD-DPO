@@ -1016,8 +1016,9 @@ class BasicTrainer(object):
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-                
-
+        
+        self.distiller.projectors.save_pretrained("generated-data/ultra-feedback-tisdpo")
+        rank0_print(f"projector saved to generated-data/ultra-feedback-tisdpo using save_pretrained")
         '''
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
