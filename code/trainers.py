@@ -918,7 +918,7 @@ class BasicTrainer(object):
         self.example_counter = 0
         self.batch_counter = 0
         last_log = None
-
+        '''
         num_iter = 0
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
@@ -1172,7 +1172,7 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #self.save_checkpoint(step=self.example_counter)
-        '''
+        
     def clip_gradient(self):
         """Clip the gradient norm of the parameters of a non-FSDP policy."""
         return torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.config.max_grad_norm).item()
