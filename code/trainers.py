@@ -1080,6 +1080,7 @@ class BasicTrainer(object):
                         if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
                             wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
                 #self.save_checkpoint(step=self.batch_counter)
+                '''
                 if (
                         self.config.save_checkpoint
                         and (int(self.example_counter / 10) % self.config.eval_every) == 0
@@ -1087,6 +1088,7 @@ class BasicTrainer(object):
                     self.save_checkpoint(
                         step=self.batch_counter
                     )
+                '''
             #### END EVALUATION ####
             
             ### === Phase 1: Train Projector ===
@@ -1171,7 +1173,9 @@ class BasicTrainer(object):
                 last_log = time.time()
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
-            #self.save_checkpoint(step=self.example_counter)
+        
+        torch.save(self.distiller.projectors.state_dict(), "generated-data/ultra-feedback-tisdpo")
+        rank0_print(f"projector saved to generated-data/ultra-feedback-tisdpo using save_pretrained")   
         
     def clip_gradient(self):
         """Clip the gradient norm of the parameters of a non-FSDP policy."""
