@@ -449,13 +449,12 @@ class BasicTrainer(object):
         self.world_size = world_size
         self.config = config
         self.run_dir = run_dir
+        self.rank = rank
 
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
 
-        self.device = next(policy.parameters()).device
-        print("[trainer]:", self.device)
-        self.distiller = Distiller(config, self.device)
+        self.distiller = Distiller(config, device = f"cuda:{self.rank}")
 
         teacher_tokenizer_name_or_path = (
             config.model.teacher_tokenizer_name_or_path or config.model.teacher_name_or_path
@@ -891,7 +890,7 @@ class BasicTrainer(object):
     '''
 
     def train(self, config):
-        distiller = Distiller(config, self.device)
+        distiller = Distiller(config, device = f"cuda:{self.rank}")
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(
             self.policy.parameters(), lr=self.config.lr
