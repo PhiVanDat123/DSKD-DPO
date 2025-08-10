@@ -140,7 +140,7 @@ is_model_parallel: false
 n_embed: 2048
 hidden_size: 2048
 teacher_peft_path: None
-projector_path: None
+projector_path: '/home/hungpv/projects/DSKD-DPO/script_test/generated-data/ultra-feedback-tisdpo/projector.pt'
 
 projector_warmup_steps: 1000
 projector_pretrain_steps: 100
