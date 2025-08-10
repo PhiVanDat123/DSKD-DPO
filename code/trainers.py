@@ -454,7 +454,7 @@ class BasicTrainer(object):
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
 
         self.device = next(policy.parameters()).device
-        print("[trainer]: self.device")
+        print("[trainer]:", self.device)
         self.distiller = Distiller(config, self.device)
 
         teacher_tokenizer_name_or_path = (
