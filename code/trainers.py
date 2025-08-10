@@ -1174,7 +1174,7 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
         
-        torch.save(self.distiller.projectors.state_dict(), "generated-data/ultra-feedback-tisdpo")
+        torch.save(self.distiller.projectors.state_dict(), "generated-data/ultra-feedback-tisdpo/projector.pt")
         rank0_print(f"projector saved to generated-data/ultra-feedback-tisdpo using save_pretrained")   
         
     def clip_gradient(self):

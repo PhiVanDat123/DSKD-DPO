@@ -158,7 +158,8 @@ class Distiller(nn.Module):
 
     def load_existing_projectors(self):
         if self.config.projector_path is not None:
-            projector_path = os.path.join(self.config.projector_path, "projector.pt")
+            #projector_path = os.path.join(self.config.projector_path, "projector.pt")
+            projector_path = self.config.projector_path
         else:
             projector_path = os.path.join(self.config.policy_name_or_path, "projector.pt")
 
