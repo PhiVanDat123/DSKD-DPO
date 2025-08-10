@@ -11,7 +11,7 @@ from utils.utils import log_rank
 
 
 class Distiller(nn.Module):
-    def __init__(self, config, device=None):
+    def __init__(self, config, device):
         super(Distiller, self).__init__()
         self.config = config
         self.device = device
