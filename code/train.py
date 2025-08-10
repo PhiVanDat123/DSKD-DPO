@@ -70,7 +70,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
                          rank=rank, world_size=world_size)
 
     trainer.train(config)
-    trainer.save()
+    #trainer.save()
 
 
 @hydra.main(version_base=None, config_path=None, config_name="config")
