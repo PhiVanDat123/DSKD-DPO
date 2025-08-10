@@ -454,7 +454,7 @@ class BasicTrainer(object):
         self.loss = CrossEntropyLoss(config, padding_id=-100)
         self.DSKD = DualSpaceKDWithCMA(config, padding_id=-100)
 
-        self.distiller = Distiller(config, device = f"cuda:{self.rank}")
+        self.distiller = Distiller(config, device = self.rank)
 
         teacher_tokenizer_name_or_path = (
             config.model.teacher_tokenizer_name_or_path or config.model.teacher_name_or_path
@@ -890,7 +890,7 @@ class BasicTrainer(object):
     '''
 
     def train(self, config):
-        distiller = Distiller(config, device = f"cuda:{self.rank}")
+        distiller = Distiller(config, device = self.rank)
         rank0_print(f'Using {self.config.optimizer} optimizer')
         self.optimizer = getattr(torch.optim, self.config.optimizer)(
             self.policy.parameters(), lr=self.config.lr
