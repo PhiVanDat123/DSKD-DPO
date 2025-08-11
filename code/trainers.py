@@ -981,7 +981,7 @@ class BasicTrainer(object):
                     )
                 
             #### END EVALUATION ####
-            
+            '''
             ### === Phase 1: Train Projector ===
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
@@ -1008,7 +1008,7 @@ class BasicTrainer(object):
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-
+            '''
             ### === Phase 2: Train Student Model ===
             for param in self.distiller.projectors.parameters():
                 param.requires_grad = False
