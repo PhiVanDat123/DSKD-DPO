@@ -516,16 +516,6 @@ class BasicTrainer(object):
             num_workers=2,
             drop_last=True,
         )
-        self.pretrain_iterator = DataLoader(
-            self.train_dataset,
-            batch_size=config.batch_size,
-            shuffle=True,
-            #collate_fn=get_collate_fn(self.tokenizer),
-            collate_fn=CustomCollate(self.tokenizer),
-            pin_memory=True,
-            num_workers=2,
-            drop_last=True,
-        )
         rank0_print("Loaded train data iterator")
         # self.train_iterator = get_batch_iterator(
         #     **data_iterator_kwargs,
@@ -554,11 +544,12 @@ class BasicTrainer(object):
         #     silent=rank != 0,
         #     transform_config=transform_config,
         # )
-        self.eval_batches = list(self.eval_iterator)
+        #self.eval_batches = list(self.eval_iterator)
+        '''
         rank0_print(
             f"Loaded {len(self.eval_batches)} eval batches of size {config.eval_batch_size}"
         )
-
+        '''
     def get_batch_samples(self, batch: Dict[str, torch.LongTensor]) -> Tuple[str, str]:
         """Generate samples from the policy (and reference model, if doing DPO training) for the given batch of inputs."""
 
@@ -920,8 +911,6 @@ class BasicTrainer(object):
         self.example_counter = 0
         self.batch_counter = 0
         last_log = None
-        '''
-        num_iter = 0
         for batch in self.train_iterator:
             print("[debug] Batch key:", batch.keys())
             
@@ -937,7 +926,7 @@ class BasicTrainer(object):
                     if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
                         reference_text_table = wandb.Table(columns=["step", "prompt", "sample"])
 
-                for eval_batch in (tqdm.tqdm(self.eval_batches, desc='Computing eval metrics') if self.rank == 0 else self.eval_batches):
+                for eval_batch in (tqdm.tqdm(self.eval_iterator, desc='Computing eval metrics') if self.rank == 0 else self.eval_iterator):
                     #print("[eval] Eval batch content:", eval_batch)
                     local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
                     #print("[eval] Local eval batch content:", local_eval_batch)
@@ -947,6 +936,7 @@ class BasicTrainer(object):
                     for k, v in eval_metrics.items():
                         all_eval_metrics[k].extend(v)
 
+                '''
                 if self.config.sample_during_eval:
                     if self.config.n_eval_model_samples < self.config.eval_batch_size:
                         rank0_print(f'Warning: n_eval_model_samples ({self.config.n_eval_model_samples}) < eval_batch_size ({self.config.eval_batch_size}). Sampling from the first complete eval batch of prompts.')
@@ -966,107 +956,7 @@ class BasicTrainer(object):
                         if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
                             for prompt, sample in zip(eval_batch['prompt'], reference_samples):
                                 reference_text_table.add_data(self.example_counter, prompt, sample)
-
-                mean_eval_metrics = {k: sum(v) / len(v) for k, v in all_eval_metrics.items()}
-                rank0_print(f'eval after {self.example_counter}: {formatted_dict(mean_eval_metrics)}')
-                if self.config.sample_during_eval:                    
-                    rank0_print(json.dumps(all_policy_samples[:10], indent=2))
-                    if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-                        rank0_print(json.dumps(all_reference_samples[:10], indent=2))
-
-                if self.config.wandb.enabled and self.rank == 0:
-                    wandb.log(mean_eval_metrics, step=self.example_counter)
-
-                    if self.config.sample_during_eval:
-                        wandb.log({"policy_samples": policy_text_table}, step=self.example_counter)
-                        if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-                            wandb.log({"reference_samples": reference_text_table}, step=self.example_counter)
-                #self.save_checkpoint(step=self.batch_counter)
-                if (
-                        self.config.save_checkpoint
-                        and (int(self.example_counter / 10) % self.config.eval_every) == 0
-                ):
-                    self.save_checkpoint(
-                        step=self.batch_counter
-                    )
-            #### END EVALUATION ####
-                
-            ### === Phase 1: Train Projector ===
-            if config.loss.name in {'tisdpo'}:
-                for param in self.policy.parameters():
-                    param.requires_grad = False
-                self.distiller.projectors.train()
-
-                num_iter += 1
-                self.projector_optimizer.zero_grad()
-                for microbatch_idx in range(self.config.gradient_accumulation_steps):
-                    #print(f"[DEBUG] microbatch_idx keys: {list(microbatch_idx.keys())}")
-                    global_microbatch = slice_and_move_batch_for_device(
-                        batch, microbatch_idx, self.config.gradient_accumulation_steps, self.rank
-                    )
-                    local_microbatch = slice_and_move_batch_for_device(
-                        global_microbatch, self.rank, self.world_size, self.rank
-                    )
-                    #print(f"[DEBUG] local_microbatch keys: {list(local_microbatch.keys())}")
-                    concat_student_data = concatenated_inputs(local_microbatch, mode='student')
-                    concat_teacher_data = concatenated_inputs(local_microbatch, mode='teacher')
-                    print("[trainer] num_iter:", num_iter)
-                    t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(local_microbatch, distiller, self.policy, self.reference_model)
-                    #  Projector loss vẫn cần tính gradient
-                    projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
-                    (projector_loss / self.config.gradient_accumulation_steps).backward()
-
-                self.projector_optimizer.step()
-                self.projector_scheduler.step()
-        
-        torch.save(self.distiller.projectors.state_dict(), "generated-data/ultra-feedback-tisdpo")
-        rank0_print(f"projector saved to generated-data/ultra-feedback-tisdpo using save_pretrained")
-        '''
-        for batch in self.train_iterator:
-            print("[debug] Batch key:", batch.keys())
-            
-            #### BEGIN EVALUATION ####
-            if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
-                rank0_print(f'Running evaluation after {self.example_counter} train examples')
-                self.policy.eval()
-
-                all_eval_metrics = defaultdict(list)
-                if self.config.sample_during_eval:
-                    all_policy_samples, all_reference_samples = [], []
-                    policy_text_table = wandb.Table(columns=["step", "prompt", "sample"])
-                    if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-                        reference_text_table = wandb.Table(columns=["step", "prompt", "sample"])
-
-                for eval_batch in (tqdm.tqdm(self.eval_batches, desc='Computing eval metrics') if self.rank == 0 else self.eval_batches):
-                    #print("[eval] Eval batch content:", eval_batch)
-                    local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
-                    #print("[eval] Local eval batch content:", local_eval_batch)
-                    with torch.no_grad():
-                        _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, mode="student", train=False)
-
-                    for k, v in eval_metrics.items():
-                        all_eval_metrics[k].extend(v)
-
-                if self.config.sample_during_eval:
-                    if self.config.n_eval_model_samples < self.config.eval_batch_size:
-                        rank0_print(f'Warning: n_eval_model_samples ({self.config.n_eval_model_samples}) < eval_batch_size ({self.config.eval_batch_size}). Sampling from the first complete eval batch of prompts.')
-                        sample_batches = self.eval_batches[:1]
-                    else:
-                        n_sample_batches = self.config.n_eval_model_samples // self.config.eval_batch_size
-                        sample_batches = self.eval_batches[:n_sample_batches]
-                    for eval_batch in (tqdm.tqdm(sample_batches, desc='Generating samples...') if self.rank == 0 else sample_batches):
-                        local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
-                        policy_samples, reference_samples = self.get_batch_samples(local_eval_batch)
-
-                        all_policy_samples.extend(policy_samples)
-                        all_reference_samples.extend(reference_samples)
-
-                        for prompt, sample in zip(eval_batch['prompt'], policy_samples):
-                            policy_text_table.add_data(self.example_counter, prompt, sample)
-                        if self.config.loss.name in {'dpo', 'ipo', 'tdpo', 'tisdpo'}:
-                            for prompt, sample in zip(eval_batch['prompt'], reference_samples):
-                                reference_text_table.add_data(self.example_counter, prompt, sample)
-
+                '''
                 mean_eval_metrics = {k: sum(v) / len(v) for k, v in all_eval_metrics.items()}
                 rank0_print(f'eval after {self.example_counter}: {formatted_dict(mean_eval_metrics)}')
                 if self.config.sample_during_eval:                    
