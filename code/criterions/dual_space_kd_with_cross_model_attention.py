@@ -106,9 +106,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         stu_embed_tokens = stu_embed_tokens.to(device)
-        print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
-        print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
-        print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
 
 
         '''
@@ -132,7 +129,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
         )
         
         tea_embed_tokens = tea_embed_tokens.to(device)
-        print("[dskd] tea_embed_tokens device:", tea_embed_tokens.weight.device)
             
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
@@ -155,40 +151,25 @@ class DualSpaceKDWithCMA(VariousDivergence):
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        print("stu_index_embeds.shape:", stu_index_embeds.shape)
-        print("tea_index_embeds.shape:", tea_index_embeds.shape)
-        print("projectors['query']:", distiller.projectors["query"])
-
         distiller.projectors["query"] = distiller.projectors["query"].to(device)
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
-
-        print("projectors['t2s']:", distiller.projectors["t2s"])
-        print("(norm_teacher_hiddens + norm_tea_target_embeds).shape:", (norm_teacher_hiddens + norm_tea_target_embeds).shape)
 
         distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
         ).float().to(device)
         
-        print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
-        print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
         align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
         align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
         align = align + (1.0 - align_mask) * (-100000)
-        print("[DEBUG] align shape:", align.shape)
 
-        t2s_weight = torch.softmax(align, -1) 
-        print("[DEBUG] t2s_weight shape:", t2s_weight.shape)
-        print("[DEBUG] tea_v_hiddens shape:", tea_v_hiddens.shape)       
+        t2s_weight = torch.softmax(align, -1)      
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
-        print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
-        print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
         t2s_logits = t2s_hiddens.matmul(
             model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
-        print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
         
         return t2s_logits, target
     
@@ -248,9 +229,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
             raise NotImplementedError
 
         stu_embed_tokens = stu_embed_tokens.to(device)
-        print("[dskd] stu_embed_tokens device (after .to):", stu_embed_tokens.weight.device)
-        print(f"[dskd] stu_embed_tokens.is_meta: {stu_embed_tokens.weight.is_meta}")
-        print("[dskd] weight.storage size:", stu_embed_tokens.weight.storage().size())
     
         
         '''
@@ -274,7 +252,6 @@ class DualSpaceKDWithCMA(VariousDivergence):
         )
         
         tea_embed_tokens = tea_embed_tokens.to(device)
-        print("[dskd] tea_embed_tokens device:", tea_embed_tokens.weight.device)
             
 
         formal_target = torch.where(pad_mask, target, torch.zeros_like(target)).to(device)
@@ -297,40 +274,25 @@ class DualSpaceKDWithCMA(VariousDivergence):
         norm_tea_target_embeds = tea_target_embeds / tea_target_embeds.std()
         norm_teacher_hiddens = teacher_hiddens / teacher_hiddens.std()
 
-        print("stu_index_embeds.shape:", stu_index_embeds.shape)
-        print("tea_index_embeds.shape:", tea_index_embeds.shape)
-        print("projectors['query']:", distiller.projectors["query"])
-
         distiller.projectors["query"] = distiller.projectors["query"].to(device)
         stu_q_hiddens = distiller.projectors["query"](stu_index_embeds).float().to(device)
         tea_k_hiddens = norm_tea_index_embeds.float().to(device)
-
-        print("projectors['t2s']:", distiller.projectors["t2s"])
-        print("(norm_teacher_hiddens + norm_tea_target_embeds).shape:", (norm_teacher_hiddens + norm_tea_target_embeds).shape)
 
         distiller.projectors["t2s"] = distiller.projectors["t2s"].to(device)
         tea_v_hiddens = distiller.projectors["t2s"](
             norm_teacher_hiddens + norm_tea_target_embeds
         ).float().to(device)
         
-        print("stu_q_hiddens.shape:", stu_q_hiddens.shape)
-        print("tea_k_hiddens.shape:", tea_k_hiddens.shape)
         align = stu_q_hiddens.matmul(tea_k_hiddens.transpose(-1, -2))
         align = align / math.sqrt(2 * teacher_hiddens.shape[-1])
         align_mask = pad_mask.float().unsqueeze(-1) * teacher_pad_mask.float().unsqueeze(1)
         align = align + (1.0 - align_mask) * (-100000)
-        print("[DEBUG] align shape:", align.shape)
 
-        t2s_weight = torch.softmax(align, -1) 
-        print("[DEBUG] t2s_weight shape:", t2s_weight.shape)
-        print("[DEBUG] tea_v_hiddens shape:", tea_v_hiddens.shape)       
+        t2s_weight = torch.softmax(align, -1)        
         t2s_hiddens = t2s_weight.matmul(tea_v_hiddens)
-        print("[DEBUG] t2s_hiddens shape:", t2s_hiddens.shape)
-        print("[DEBUG] model.lm_head.weight.detach().transpose(-1, -2) shape", model.lm_head.weight.detach().transpose(-1, -2).shape)
         t2s_logits = t2s_hiddens.matmul(
             model.lm_head.weight.detach().transpose(-1, -2).to(device)
         ).to(device)
-        print("[DEBUG] t2s_logits shape:", t2s_logits.shape)
         
         return t2s_logits, target
     
