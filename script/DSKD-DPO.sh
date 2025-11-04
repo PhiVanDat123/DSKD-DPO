@@ -1,33 +1,29 @@
 #!/bin/bash
 set -e
 
-echo "Current directory: $(pwd)"
 
-CONFIG_DIR="/home/hungpv/projects/DSKD-DPO/config"  #thay bằng path trên server của chị
-
-${CONDA_PREFIX}/bin/python -u ../code/train.py \
-  --config-dir $CONFIG_DIR \
-  --config-name config.yaml \
+python3 -u /teamspace/studios/this_studio/DSKD-DPO/code/train.py \
   model=DSKD-DPO \
-  model.policy_name_or_path=meta-llama/Llama-3.1-8B \  #thay bằng path cp llama 8B sft
-  model.reference_name_or_path=Qwen/Qwen2.5-14B \      #thay bằng path cp qwen 14B sft
-  model.teacher_tokenizer_name_or_path=Qwen/Qwen2.5-14B \ 
-  model.student_tokenizer_name_or_path=meta-llama/Llama-3.1-8B \
-  model.teacher_name_or_path=Qwen/Qwen2.5-14B \         #thay bằng path cp qwen 14B sft
-  model.student_name_or_path=meta-llama/Llama-3.1-8B \  #thay bằng path cp llama 8B sft
+  model.policy_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/meta-llama/Llama-3.2-1B \
+  model.reference_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/Qwen/Qwen2.5-7B \
+  model.teacher_tokenizer_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/Qwen/Qwen2.5-7B \
+  model.student_tokenizer_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/meta-llama/Llama-3.2-1B \
+  model.teacher_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/Qwen/Qwen2.5-7B \
+  model.student_name_or_path=/teamspace/studios/this_studio/DSKD-DPO/models/meta-llama/Llama-3.2-1B \
+  model.original_policy_name=/teamspace/studios/this_studio/DSKD-DPO/models/meta-llama/Llama-3.2-1B \
   model.policy_block_name=LlamaDecoderLayer \
   model.reference_block_name=Qwen2DecoderLayer \
   loss=tisdpo \
+  log_dir=KDPO_stdAllV1 \
   policy_mode=student \
   reference_mode=teacher \
-  eval_every=500 \
-  datasets=pvdhihihi/7B-weight-trasformed-v3 \
+  loss.beta=0.1 \
+  loss.label_smoothing=0 \
+  loss.average_log_prob=false \
+  n_epochs=1 \
+  max_grad_norm=1.0 \
   gradient_accumulation_steps=1 batch_size=8 eval_batch_size=8 \
+  total_steps=7082 warmup_steps=708 eval_every=566 \
+  lr=1e-6 scheduler=cosine \
   trainer=FSDPTrainer sample_during_eval=false \
-#  save_repo=tonyshelby/Qwen2.5_0.5B_TDPO_DSKD \
-#   model.policy_name_or_path=openai-community/gpt2 \
-#   model.reference_name_or_path=openai-community/gpt2 \
-#   model.teacher_tokenizer_name_or_path=openai-community/gpt2 \
-#   model.student_tokenizer_name_or_path=openai-community/gpt2 \
-#   model.policy_block_name=Qwen2DecoderLayer \
-#   model.reference_block_name=Qwen2DecoderLayer \
+  datasets=datasets/data \
