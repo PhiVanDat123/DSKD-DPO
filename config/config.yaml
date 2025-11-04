@@ -156,6 +156,7 @@ data_path: "tonyshelby/ultra-feedback_checking"
 
 tisdpo_rate: 1
 dtw_rate: 0.5
+scheduler: null
 
 
 defaults:
