@@ -154,6 +154,10 @@ negative_model_name: "openai-community/gpt2"
 output_dir: "generated-data/ultra-feedback-tisdpo"
 data_path: "tonyshelby/ultra-feedback_checking"
 
+tisdpo_rate: 1
+dtw_rate: 0.5
+
+
 defaults:
 - _self_
 - model: DSKD-DPO # basic model configuration

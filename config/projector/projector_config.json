@@ -10,5 +10,13 @@
     "query": {
         "enabled": true,
         "structure": "2s-2t"
+    },
+    "dtw_hidden_t2s": {
+        "enabled": true,
+        "structure": "t-s"
+    },
+    "dtw_embed_t2s": {
+        "enabled": true,
+        "structure": "t-s"
     }
 }

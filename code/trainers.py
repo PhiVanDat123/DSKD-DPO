@@ -594,14 +594,14 @@ class BasicTrainer(object):
     
     
     def tisdpo_concatenated_forward(self, model: nn.Module, reference_model: nn.Module,
-                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller, config, mode):
+                                  batch: Dict[str, Union[List, torch.LongTensor]], distiller, config):
         """Run the policy model and the reference model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
            We do this to avoid doing two forward passes, because it's faster for FSDP.
         """
-        concatenated_batch = concatenated_inputs(batch, mode)
-        all_logits = model(concatenated_batch[f'concatenated_{mode}_input_ids'],
-                           attention_mask=concatenated_batch[f'concatenated_{mode}_attention_mask']).logits
+        concatenated_batch = concatenated_inputs(batch, 'student')
+        all_logits = model(concatenated_batch[f'concatenated_student_input_ids'],
+                           attention_mask=concatenated_batch[f'concatenated_student_attention_mask']).logits
         all_logits = all_logits.to(dtype=torch.float32)
         print(f"[tisdpo_concatenated_forward] all_logits shape: {all_logits.shape}")
         teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
@@ -614,17 +614,17 @@ class BasicTrainer(object):
         reference_all_logits, _ = self.DSKD.compute_batch_dual_space_kd_loss_with_cma(concatenated_batch, teacher_concatenated_batch, distiller, model, reference_model)
         print(f"[tisdpo_concatenated_forward] reference_all_logits shape: {reference_all_logits.shape}")
 
-        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_{mode}_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
+        all_logps_margin, all_position_kl, all_logps = _get_batch_logps_tisdpo(all_logits, reference_all_logits, concatenated_batch[f'concatenated_student_labels'], concatenated_batch[f'concatenated_weight'], average_log_prob=False)
 
-        chosen_logps_margin = all_logps_margin[:batch[f'chosen_{mode}_input_ids'].shape[0]]
-        rejected_logps_margin = all_logps_margin[batch[f'chosen_{mode}_input_ids'].shape[0]:]
-        chosen_position_kl = all_position_kl[:batch[f'chosen_{mode}_input_ids'].shape[0]]
-        rejected_position_kl = all_position_kl[batch[f'chosen_{mode}_input_ids'].shape[0]:]
+        chosen_logps_margin = all_logps_margin[:batch[f'chosen_student_input_ids'].shape[0]]
+        rejected_logps_margin = all_logps_margin[batch[f'chosen_student_input_ids'].shape[0]:]
+        chosen_position_kl = all_position_kl[:batch[f'chosen_student_input_ids'].shape[0]]
+        rejected_position_kl = all_position_kl[batch[f'chosen_student_input_ids'].shape[0]:]
 
         #chosen_logps = all_logps[:batch[f'chosen_{mode}_input_ids'].shape[0]].detach()
-        chosen_logps = all_logps[:batch[f'chosen_{mode}_input_ids'].shape[0]]
+        chosen_logps = all_logps[:batch[f'chosen_student_input_ids'].shape[0]]
         #rejected_logps = all_logps[batch[f'chosen_{mode}_input_ids'].shape[0]:].detach()
-        rejected_logps = all_logps[batch[f'chosen_{mode}_input_ids'].shape[0]:]
+        rejected_logps = all_logps[batch[f'chosen_student_input_ids'].shape[0]:]
 
         return chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, \
             chosen_logps, rejected_logps
@@ -660,6 +660,8 @@ class BasicTrainer(object):
     def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, mode, train=True):
         """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
         #print("[trainers] Batch content:", batch)
+        concatenated_batch = concatenated_inputs(batch, 'student')
+        teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
         metrics = {}
         train_test = 'train' if train else 'eval'
 
@@ -720,11 +722,12 @@ class BasicTrainer(object):
         #    metrics[f'logps_{train_test}/rejected'] = policy_rejected_logps.cpu().numpy().tolist()
         elif loss_config.name == 'tisdpo':
             chosen_logps_margin, rejected_logps_margin, chosen_position_kl, rejected_position_kl, policy_chosen_logps, policy_rejected_logps\
-                = self.tisdpo_concatenated_forward(self.policy, self.reference_model, batch, self.distiller, self.config, mode)
-            losses, chosen_rewards, rejected_rewards = tisdpo_loss(chosen_logps_margin, rejected_logps_margin,
+                = self.tisdpo_concatenated_forward(self.policy, self.reference_model, batch, self.distiller, self.config)
+            loss, chosen_rewards, rejected_rewards = tisdpo_loss(chosen_logps_margin, rejected_logps_margin,
                                                                  chosen_position_kl, rejected_position_kl,
                                                                  beta=loss_config.beta, alpha=loss_config.alpha, token_level=loss_config.token_level)
-
+            loss_dtw = self.DSKD.compute_dtw_and_alignment_kd_losses(concatenated_batch, teacher_concatenated_batch, self.distiller, self.policy, self.reference_model)
+            losses = self.config.tisdpo_rate * loss + self.config.dtw_rate * loss_dtw
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
             chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
