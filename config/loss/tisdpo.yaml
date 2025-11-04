@@ -9,6 +9,7 @@ beta: 0.05
 #   the fraction of preference pairs that are flipped
 #   eps=0 is the original DPO loss in the DPO paper
 label_smoothing: 0
+average_log_prob: false
 
 # if true, use a uniform (maximum entropy) reference model
 reference_free: false
