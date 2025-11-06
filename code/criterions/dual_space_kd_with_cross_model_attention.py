@@ -342,7 +342,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             t_proj = proj(t_seq)
 
             C = 1.0 - torch.cosine_similarity(
-                s_seq.detach().unsqueeze(1), t_proj.unsqueeze(0), dim=-1
+                s_seq.detach().unsqueeze(1).to(t_proj.device), t_proj.unsqueeze(0), dim=-1
             )  # (s_len, t_len)
 
             # soft-DTW divergence in student space: dtw(S,T') - 1/2(dtw(S,S) + dtw(T',T'))
