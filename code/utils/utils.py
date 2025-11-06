@@ -187,6 +187,8 @@ def slice_and_move_batch_for_device(batch: Dict, rank: int, world_size: int, dev
 def pad_to_length(
     tensor: torch.Tensor, length: int, pad_value: Union[int, float], dim: int = -1
 ) -> torch.Tensor:
+    if isinstance(tensor, list):
+        tensor = torch.tensor(tensor, dtype=torch.float if isinstance(pad_value, float) else torch.long)
     if tensor.size(dim) >= length:
         return tensor
     else:
