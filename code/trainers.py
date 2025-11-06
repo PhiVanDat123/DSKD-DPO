@@ -329,12 +329,7 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
     max_length = max(
         batch[f"chosen_{mode}_input_ids"].shape[1], batch[f"rejected_{mode}_input_ids"].shape[1]
     )
-    max_num_parents = max(
-        batch[f"chosen_{mode}_parent_list"].shape[1], batch[f"rejected_{mode}_parent_list"].shape[1]
-    )
-    max_span = max(
-        batch[f"chosen_{mode}_parent_list"].shape[2], batch[f"rejected_{mode}_parent_list"].shape[2]
-    )
+
     concatenated_batch = {}
     #keys = [k for k in batch if mode in k]
     #keys.extend([k for k in batch if "weight" in k])
@@ -348,14 +343,8 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                 # print(k)
                 # print(concatenated_key)
                 concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_num_parents, pad_value=pad_value
+                    batch[k], max_length, pad_value=pad_value
                 )
-            elif "parent_list" in k:
-                concatenated_batch[concatenated_key] = fast_pad_tensor(
-                    batch[k], max_num_parents, max_span, pad_value=-1
-                )
-            elif ("parent_dict" in k) or ("offset_mapping" in k):
-                concatenated_batch[concatenated_key] = batch[k]
             else:
                 # print(k)
                 # print(type(batch[k]))
@@ -371,20 +360,10 @@ def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
                 concatenated_batch[concatenated_key] = torch.cat(
                     (
                         concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_num_parents, pad_value=pad_value),
+                        pad_to_length(batch[k], max_length, pad_value=pad_value),
                     ),
                     dim=0,
                 )
-            elif "parent_list" in k:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        fast_pad_tensor(batch[k], max_num_parents, max_span, pad_value=-1),
-                    ),
-                    dim=0,
-                )
-            elif ("parent_dict" in k) or ("offset_mapping" in k):
-                concatenated_batch[concatenated_key] += batch[k]
             else:
                 concatenated_batch[concatenated_key] = torch.cat(
                     (
