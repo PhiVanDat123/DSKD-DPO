@@ -6,11 +6,13 @@ from utils.utils import pad_to_length
 from datasets import load_dataset
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext, ExitStack
+from .soft_dtw_cuda import SoftDTW
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
         super().__init__(config, padding_id=padding_id)
         self.distiller = None
+        self.dtw = SoftDTW(use_cuda=True)
 
     '''
     def forward(
