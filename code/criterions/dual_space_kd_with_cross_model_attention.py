@@ -296,7 +296,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         
         return t2s_logits, target
     
-    def compute_dtw_and_alignment_kd_losses(self, concat_student_data, concat_teacher_data, distiller, model, reference_model):
+    def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model):
         device = next(model.parameters()).device  
         model = model.to(device)
         teacher_model = reference_model.to(device)
@@ -304,21 +304,21 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         # === Forward student ===
         outputs = model(
-            concat_student_data["chosen_student_input_ids"].to(device),
-            attention_mask=concat_student_data["chosen_student_attention_mask"].to(device),
+            batch["chosen_student_input_ids"].to(device),
+            attention_mask=batch["chosen_student_attention_mask"].to(device),
             output_hidden_states=True
         )
 
         # === Forward teacher ===
         teacher_outputs = teacher_model(
-            concat_teacher_data["chosen_teacher_input_ids"].to(device),
-            attention_mask=concat_teacher_data["chosen_teacher_attention_mask"].to(device),
+            batch["chosen_teacher_input_ids"].to(device),
+            attention_mask=batch["chosen_teacher_attention_mask"].to(device),
             output_hidden_states=True
         )
 
-        target = concat_student_data["chosen_student_labels"].to(device)
+        target = batch["chosen_student_labels"].to(device)
         pad_mask = target.ne(self.padding_id)
-        teacher_target = concat_student_data["chosen_teacher_labels"].to(device)
+        teacher_target = batch["chosen_teacher_labels"].to(device)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
 
         hiddens = outputs.hidden_states[-1]

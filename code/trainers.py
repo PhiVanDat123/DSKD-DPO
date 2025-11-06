@@ -638,8 +638,6 @@ class BasicTrainer(object):
     def get_batch_metrics(self, batch: Dict[str, Union[List, torch.LongTensor]], loss_config: DictConfig, mode, train=True):
         """Compute the SFT or DPO loss and other metrics for the given batch of inputs."""
         #print("[trainers] Batch content:", batch)
-        concatenated_batch = concatenated_inputs(batch, 'student')
-        teacher_concatenated_batch = concatenated_inputs(batch, 'teacher')
         metrics = {}
         train_test = 'train' if train else 'eval'
 
@@ -704,7 +702,7 @@ class BasicTrainer(object):
             loss, chosen_rewards, rejected_rewards = tisdpo_loss(chosen_logps_margin, rejected_logps_margin,
                                                                  chosen_position_kl, rejected_position_kl,
                                                                  beta=loss_config.beta, alpha=loss_config.alpha, token_level=loss_config.token_level)
-            loss_dtw = self.DSKD.compute_dtw_and_alignment_kd_losses(concatenated_batch, teacher_concatenated_batch, self.distiller, self.policy, self.reference_model)
+            loss_dtw = self.DSKD.compute_dtw_and_alignment_kd_losses(batch, self.distiller, self.policy, self.reference_model)
             losses = self.config.tisdpo_rate * loss + self.config.dtw_rate * loss_dtw
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
