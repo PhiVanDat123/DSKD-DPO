@@ -336,7 +336,10 @@ class DualSpaceKDWithCMA(VariousDivergence):
             s_seq = hiddens[i, :s_len, :]   
             t_seq = teacher_hiddens[i, :t_len, :]
 
-            t_proj = distiller.projectors["dtw_hidden_t2s"](t_seq)  # (t_len, d_stu)
+            #t_proj = distiller.projectors["dtw_hidden_t2s"](t_seq)  # (t_len, d_stu)
+            proj = distiller.projectors["dtw_hidden_t2s"]
+            t_seq = t_seq.to(next(proj.parameters()).device)  # chuyển t_seq sang cùng device với projector
+            t_proj = proj(t_seq)
 
             C = 1.0 - torch.cosine_similarity(
                 s_seq.detach().unsqueeze(1), t_proj.unsqueeze(0), dim=-1
