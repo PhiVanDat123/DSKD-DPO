@@ -316,61 +316,32 @@ def fast_pad_tensor(input_tensor, max_token, max_span, pad_value=-1):
 
     return output
 
-def concatenated_inputs(batch: Dict, mode: str) -> Dict[str, torch.LongTensor]:
+def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]], mode: str) -> Dict[str, torch.LongTensor]:
     """Concatenate the chosen and rejected inputs into a single tensor.
-
+    
     Args:
         batch: A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids', which are tensors of shape (batch_size, sequence_length).
-
+        
     Returns:
         A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
     """
-    ''''''
     max_length = max(
         batch[f"chosen_{mode}_input_ids"].shape[1], batch[f"rejected_{mode}_input_ids"].shape[1]
     )
     concatenated_batch = {}
-    #keys = [k for k in batch if mode in k]
-    #keys.extend([k for k in batch if "weight" in k])
-    keys = [k for k in batch if k.startswith(f"chosen_{mode}") or k.startswith(f"rejected_{mode}")]
-    for k in keys:
-        # if k.startswith("chosen") and isinstance(batch[k], torch.Tensor):
-        if k.startswith(f"chosen_{mode}"):
-            pad_value = -100 if "labels" in k else 0
-            concatenated_key = k.replace("chosen", "concatenated")
-            if "weight" in k:
-                # print(k)
-                # print(concatenated_key)
-                concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_length, pad_value=pad_value, dim=1
-                )
-            else:
-                # print(k)
-                # print(type(batch[k]))
-                concatenated_batch[concatenated_key] = pad_to_length(
-                    batch[k], max_length, pad_value=pad_value, dim=1
-                )
-    for k in keys:
-        # if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
-        if k.startswith(f"rejected_{mode}"):
-            pad_value = -100 if "labels" in k else 0
-            concatenated_key = k.replace("rejected", "concatenated")
-            if "weight" in k:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_length, pad_value=pad_value, dim=1),
-                    ),
-                    dim=0,
-                )
-            else:
-                concatenated_batch[concatenated_key] = torch.cat(
-                    (
-                        concatenated_batch[concatenated_key],
-                        pad_to_length(batch[k], max_length, pad_value=pad_value, dim=1),
-                    ),
-                    dim=0,
-                )
+    for k in batch:
+        if k.startswith(f'chosen_{mode}') and isinstance(batch[k], torch.Tensor):
+            pad_value = -100 if 'labels' in k else 0
+            concatenated_key = k.replace('chosen', 'concatenated')
+            concatenated_batch[concatenated_key] = pad_to_length(batch[k], max_length, pad_value=pad_value)
+    for k in batch:
+        if k.startswith(f'rejected_{mode}') and isinstance(batch[k], torch.Tensor):
+            pad_value = -100 if 'labels' in k else 0
+            concatenated_key = k.replace('rejected', 'concatenated')
+            concatenated_batch[concatenated_key] = torch.cat((
+                concatenated_batch[concatenated_key],
+                pad_to_length(batch[k], max_length, pad_value=pad_value),
+            ), dim=0)
 
     weight_keys = [k for k in batch if k.startswith(f"chosen") or k.startswith(f"rejected")]
     for k in weight_keys:

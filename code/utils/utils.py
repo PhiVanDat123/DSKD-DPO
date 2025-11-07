@@ -200,44 +200,13 @@ def pad_to_length(
         )
 '''
 
-def pad_to_length(
-    tensor: Union[torch.Tensor, list],
-    length: int,
-    pad_value: Union[int, float],
-    dim: int = -1,
-) -> torch.Tensor:
-    """
-    Pad tensor hoặc list các tensor/list con đến chiều dài 'length' tại trục 'dim'.
-    Tự động xử lý cả trường hợp tensor là list các sequence có độ dài khác nhau.
-    """
-    # Nếu là list các sequence có độ dài khác nhau
-    if isinstance(tensor, list):
-        # Nếu là list các list (vd [[1,2,3], [1,2]])
-        if isinstance(tensor[0], (list, torch.Tensor)):
-            tensors = []
-            for seq in tensor:
-                seq = torch.as_tensor(seq, dtype=torch.float if isinstance(pad_value, float) else torch.long)
-                if seq.size(dim) < length:
-                    pad_size = list(seq.shape)
-                    pad_size[dim] = length - seq.size(dim)
-                    padding = pad_value * torch.ones(*pad_size, dtype=seq.dtype, device=seq.device)
-                    seq = torch.cat([seq, padding], dim=dim)
-                else:
-                    seq = seq[:length]  # cắt nếu dài quá
-                tensors.append(seq)
-            return torch.stack(tensors, dim=0)
-        else:
-            # Nếu chỉ là list 1D đơn giản
-            tensor = torch.as_tensor(tensor, dtype=torch.float if isinstance(pad_value, float) else torch.long)
-
-    # Nếu đã là tensor
+def pad_to_length(tensor: torch.Tensor, length: int, pad_value: Union[int, float], dim: int = -1) -> torch.Tensor:
     if tensor.size(dim) >= length:
-        return tensor.narrow(dim, 0, length)
+        return tensor
     else:
         pad_size = list(tensor.shape)
         pad_size[dim] = length - tensor.size(dim)
-        padding = pad_value * torch.ones(*pad_size, dtype=tensor.dtype, device=tensor.device)
-        return torch.cat([tensor, padding], dim=dim)
+        return torch.cat([tensor, pad_value * torch.ones(*pad_size, dtype=tensor.dtype, device=tensor.device)], dim=dim)
 
 def all_gather_if_needed(values: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
     """Gather and stack/cat values from all processes, if there are multiple processes."""
