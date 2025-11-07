@@ -7,6 +7,7 @@ from datasets import load_dataset
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext, ExitStack
 from .soft_dtw_cuda import SoftDTW
+import numba.cuda
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
@@ -413,7 +414,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         return dtw_proj_total, align_kd_total
     '''
 
-    def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model):
+    def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model, rank=0):
+        numba.cuda.select_device(rank)  # đảm bảo CUDA context cho mỗi process
+
         device = next(model.parameters()).device
         model = model.to(device)
         teacher_model = reference_model.to(device)
@@ -450,7 +453,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             if s_len == 0 or t_len == 0:
                 continue
 
-            s_seq = hiddens[i, :s_len, :]   
+            s_seq = hiddens[i, :s_len, :]
             t_seq = teacher_hiddens[i, :t_len, :]
 
             # Project teacher hidden
@@ -462,20 +465,20 @@ class DualSpaceKDWithCMA(VariousDivergence):
             C = 1.0 - torch.cosine_similarity(
                 s_seq.detach().unsqueeze(1).to(t_proj.device), t_proj.unsqueeze(0), dim=-1
             )
-            C = C.to(device).float()  # <<< FIX: đảm bảo float32 và đúng device
+            C = C.to(device).float().contiguous()  # <<< FIX: float32, contiguous, device
 
-            # soft-DTW student
+            # Soft-DTW student (batch dim = 1)
             dtw_xy_stu, A = self.dtw.forward_with_cost_matrix(C.unsqueeze(0), return_alignment=True)
 
-            # Compute self-cost matrices
+            # Self-cost matrices
             C_ss = 1.0 - torch.cosine_similarity(
                 s_seq.detach().unsqueeze(1), s_seq.detach().unsqueeze(0), dim=-1
             )
             C_tt = 1.0 - torch.cosine_similarity(
                 t_proj.unsqueeze(1), t_proj.unsqueeze(0), dim=-1
             )
-            dtw_ss_stu = self.dtw.forward_with_cost_matrix(C_ss.unsqueeze(0).to(device).float())
-            dtw_tt_stu = self.dtw.forward_with_cost_matrix(C_tt.unsqueeze(0).to(device).float())
+            dtw_ss_stu = self.dtw.forward_with_cost_matrix(C_ss.to(device).float().contiguous().unsqueeze(0))
+            dtw_tt_stu = self.dtw.forward_with_cost_matrix(C_tt.to(device).float().contiguous().unsqueeze(0))
             dtw_div_stu = dtw_xy_stu - 0.5 * (dtw_ss_stu + dtw_tt_stu)
             dtw_proj_total = dtw_proj_total + dtw_div_stu.squeeze()
 
@@ -501,7 +504,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             C_teach_xy = 1.0 - torch.cosine_similarity(
                 t_seq.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
             )
-            C_teach_xy = C_teach_xy.to(device).float()  # <<< FIX
+            C_teach_xy = C_teach_xy.to(device).float().contiguous()
 
             dtw_xy_teach, B = self.dtw.forward_with_cost_matrix(C_teach_xy.unsqueeze(0), return_alignment=True)
 
@@ -511,8 +514,8 @@ class DualSpaceKDWithCMA(VariousDivergence):
             C_teach_yy = 1.0 - torch.cosine_similarity(
                 s_proj_det.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
             )
-            dtw_xx_teach = self.dtw.forward_with_cost_matrix(C_teach_xx.unsqueeze(0).to(device).float())
-            dtw_yy_teach = self.dtw.forward_with_cost_matrix(C_teach_yy.unsqueeze(0).to(device).float())
+            dtw_xx_teach = self.dtw.forward_with_cost_matrix(C_teach_xx.to(device).float().contiguous().unsqueeze(0))
+            dtw_yy_teach = self.dtw.forward_with_cost_matrix(C_teach_yy.to(device).float().contiguous().unsqueeze(0))
 
             dtw_div_teach = dtw_xy_teach - 0.5 * (dtw_xx_teach + dtw_yy_teach)
             dtw_proj_total = dtw_proj_total + dtw_div_teach.squeeze()
@@ -529,6 +532,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
             align_kd_total = align_kd_total + kd_t
 
         return dtw_proj_total, align_kd_total
+
 
 
     def _get_target_embeddings(self, distiller, input_data, output_data, pad_mask, teacher_pad_mask):
