@@ -14,14 +14,13 @@ from torch.autograd import Function
 from numba import cuda
 import math
 
-# ----------------------------------------------------------------------------------------------------------------------
+# ------------------- CUDA kernels -------------------
 @cuda.jit
 def compute_softdtw_cuda(D, gamma, bandwidth, max_i, max_j, n_passes, R):
     b = cuda.blockIdx.x
     tid = cuda.threadIdx.x
     stride = cuda.blockDim.x
     inv_gamma = 1.0 / gamma
-    LARGE = 1e10  # dùng thay cho inf
 
     for p in range(n_passes):
         I = tid
@@ -34,21 +33,18 @@ def compute_softdtw_cuda(D, gamma, bandwidth, max_i, max_j, n_passes, R):
                     r0 = -R[b, i - 1, j - 1] * inv_gamma
                     r1 = -R[b, i - 1, j] * inv_gamma
                     r2 = -R[b, i, j - 1] * inv_gamma
-                    rmax = max(max(r0, r1), r2)
+                    rmax = max(r0, r1, r2)
                     rsum = math.exp(r0 - rmax) + math.exp(r1 - rmax) + math.exp(r2 - rmax)
                     softmin = -gamma * (math.log(rsum) + rmax)
                     R[b, i, j] = D[b, i - 1, j - 1] + softmin
             I += stride
         cuda.syncthreads()
 
-# --------------------------------------------------------
-# CUDA backward kernel
 @cuda.jit
 def compute_softdtw_backward_cuda(D, R, inv_gamma, bandwidth, max_i, max_j, n_passes, E):
     k = cuda.blockIdx.x
     tid = cuda.threadIdx.x
     stride = cuda.blockDim.x
-    LARGE = 1e10
 
     for p in range(n_passes):
         rev_p = n_passes - p - 1
@@ -59,85 +55,56 @@ def compute_softdtw_backward_cuda(D, R, inv_gamma, bandwidth, max_i, max_j, n_pa
                 i = I + 1
                 j = J + 1
                 if not (0 < bandwidth < abs(i - j)):
-                    # đảm bảo không out-of-bounds
                     a = 0.0
                     b = 0.0
                     c = 0.0
-                    if i + 1 <= max_i:
+                    if i < max_i:
                         a = math.exp((R[k, i + 1, j] - R[k, i, j] - D[k, i + 1, j]) * inv_gamma)
-                    if j + 1 <= max_j:
+                    if j < max_j:
                         b = math.exp((R[k, i, j + 1] - R[k, i, j] - D[k, i, j + 1]) * inv_gamma)
-                    if i + 1 <= max_i and j + 1 <= max_j:
+                    if i < max_i and j < max_j:
                         c = math.exp((R[k, i + 1, j + 1] - R[k, i, j] - D[k, i + 1, j + 1]) * inv_gamma)
                     E[k, i, j] = E[k, i + 1, j] * a + E[k, i, j + 1] * b + E[k, i + 1, j + 1] * c
             I += stride
         cuda.syncthreads()
 
-# --------------------------------------------------------
-# CUDA autograd Function
+# ------------------- CUDA autograd -------------------
 class _SoftDTWCUDA(Function):
     @staticmethod
     def forward(ctx, D, gamma, bandwidth):
-        dev = D.device
-        dtype = D.dtype
+        B, N, M = D.shape
         gamma_val = float(gamma)
         bandwidth_val = float(bandwidth)
 
-        B, N, M = D.shape
-
-        max_threads = 1024
-        SAFE_THREAD_CAP = min(max_threads, 256)
-        threads_per_block = min(max(N, M), SAFE_THREAD_CAP)
-        threads_per_block = max(1, threads_per_block)
-
+        threads_per_block = min(256, max(N, M))
         n_passes = N + M - 1
-        R = torch.ones((B, N + 2, M + 2), dtype=torch.float32, device=dev) * 1e10
+        R = torch.ones((B, N + 2, M + 2), device=D.device, dtype=torch.float32) * 1e10
         R[:, 0, 0] = 0.0
 
-        D_cuda = D.detach().float()
-        compute_softdtw_cuda[B, threads_per_block](
-            cuda.as_cuda_array(D_cuda),
-            gamma_val, bandwidth_val, N, M, n_passes,
-            cuda.as_cuda_array(R)
-        )
-
-        ctx.save_for_backward(D, R.clone(), torch.tensor(gamma_val, device=dev), torch.tensor(bandwidth_val, device=dev))
-        result = R[:, -2, -2]
-        return result.to(dtype)
+        compute_softdtw_cuda[B, threads_per_block](D.float(), gamma_val, bandwidth_val, N, M, n_passes, R)
+        ctx.save_for_backward(D, R.clone(), torch.tensor(gamma_val, device=D.device), torch.tensor(bandwidth_val, device=D.device))
+        return R[:, -2, -2].type(D.dtype)
 
     @staticmethod
     def backward(ctx, grad_output):
         D, R, gamma_t, bandwidth_t = ctx.saved_tensors
+        B, N, M = D.shape
         gamma_val = float(gamma_t.item())
         bandwidth_val = float(bandwidth_t.item())
-
-        B, N, M = D.shape
-
-        SAFE_THREAD_CAP = 256
-        threads_per_block = min(max(N, M), SAFE_THREAD_CAP)
-        threads_per_block = max(1, threads_per_block)
+        threads_per_block = min(256, max(N, M))
         n_passes = N + M - 1
 
         D_ = torch.zeros((B, N + 2, M + 2), dtype=torch.float32, device=D.device)
         D_[:, 1:N + 1, 1:M + 1] = D.float()
-
         R_local = R.float().clone()
         R_local[:, :, -1] = 1e10
         R_local[:, -1, :] = 1e10
         R_local[:, -1, -1] = R_local[:, -2, -2]
 
-        E = torch.zeros((B, N + 2, M + 2), dtype=torch.float32, device=D.device)
+        E = torch.zeros_like(R_local)
         E[:, -1, -1] = 1.0
 
-        compute_softdtw_backward_cuda[B, threads_per_block](
-            cuda.as_cuda_array(D_),
-            cuda.as_cuda_array(R_local),
-            1.0 / gamma_val,
-            bandwidth_val,
-            N, M, n_passes,
-            cuda.as_cuda_array(E)
-        )
-
+        compute_softdtw_backward_cuda[B, threads_per_block](D_, R_local, 1.0 / gamma_val, bandwidth_val, N, M, n_passes, E)
         E_out = E[:, 1:N + 1, 1:M + 1]
         grad_input = grad_output.view(-1, 1, 1).expand_as(E_out) * E_out
         return grad_input, None, None
