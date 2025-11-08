@@ -121,8 +121,8 @@ class _SoftDTWCUDA(Function):
     def forward(ctx, D, gamma, bandwidth):
         dev = D.device
         dtype = D.dtype
-        gamma = torch.cuda.FloatTensor([gamma])
-        bandwidth = torch.cuda.FloatTensor([bandwidth])
+        gamma = torch.tensor([gamma], device=dev, dtype=torch.float32)
+        bandwidth = torch.tensor([bandwidth], device=dev, dtype=torch.float32)
 
         B = D.shape[0]
         N = D.shape[1]
@@ -130,18 +130,25 @@ class _SoftDTWCUDA(Function):
         threads_per_block = max(N, M)
         n_passes = 2 * threads_per_block - 1
 
-        # Prepare the output array
-        R = torch.ones((B, N + 2, M + 2), device=dev, dtype=dtype) * math.inf
+        # Prepare the output array - ensure float32 for CUDA compatibility
+        R = torch.ones((B, N + 2, M + 2), device=dev, dtype=torch.float32) * math.inf
         R[:, 0, 0] = 0
+
+        # Convert D to float32 for CUDA kernel compatibility
+        D_cuda = D.detach().to(torch.float32)
 
         # Run the CUDA kernel.
         # Set CUDA's grid size to be equal to the batch size (every CUDA block processes one sample pair)
         # Set the CUDA block size to be equal to the length of the longer sequence (equal to the size of the largest diagonal)
-        compute_softdtw_cuda[B, threads_per_block](cuda.as_cuda_array(D.detach()),
+        compute_softdtw_cuda[B, threads_per_block](cuda.as_cuda_array(D_cuda),
                                                    gamma.item(), bandwidth.item(), N, M, n_passes,
                                                    cuda.as_cuda_array(R))
         ctx.save_for_backward(D, R.clone(), gamma, bandwidth)
-        return R[:, -2, -2]
+        # Convert back to original dtype if needed
+        result = R[:, -2, -2]
+        if dtype != torch.float32:
+            result = result.to(dtype)
+        return result
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -155,22 +162,27 @@ class _SoftDTWCUDA(Function):
         threads_per_block = max(N, M)
         n_passes = 2 * threads_per_block - 1
 
-        D_ = torch.zeros((B, N + 2, M + 2), dtype=dtype, device=dev)
-        D_[:, 1:N + 1, 1:M + 1] = D
+        # Use float32 for CUDA compatibility
+        D_ = torch.zeros((B, N + 2, M + 2), dtype=torch.float32, device=dev)
+        D_[:, 1:N + 1, 1:M + 1] = D.to(torch.float32)
 
-        R[:, :, -1] = -math.inf
-        R[:, -1, :] = -math.inf
-        R[:, -1, -1] = R[:, -2, -2]
+        R_local = R.to(torch.float32).clone()
+        R_local[:, :, -1] = -math.inf
+        R_local[:, -1, :] = -math.inf
+        R_local[:, -1, -1] = R_local[:, -2, -2]
 
-        E = torch.zeros((B, N + 2, M + 2), dtype=dtype, device=dev)
+        E = torch.zeros((B, N + 2, M + 2), dtype=torch.float32, device=dev)
         E[:, -1, -1] = 1
 
         # Grid and block sizes are set same as done above for the forward() call
         compute_softdtw_backward_cuda[B, threads_per_block](cuda.as_cuda_array(D_),
-                                                            cuda.as_cuda_array(R),
+                                                            cuda.as_cuda_array(R_local),
                                                             1.0 / gamma.item(), bandwidth.item(), N, M, n_passes,
                                                             cuda.as_cuda_array(E))
         E = E[:, 1:N + 1, 1:M + 1]
+        # Convert back to original dtype if needed
+        if dtype != torch.float32:
+            E = E.to(dtype)
         return grad_output.view(-1, 1, 1).expand_as(E) * E, None, None
 
 
@@ -275,7 +287,7 @@ class SoftDTW(torch.nn.Module):
     The soft DTW implementation that optionally supports CUDA
     """
 
-    def __init__(self, use_cuda, gamma=1.0, normalize=False, bandwidth=None, dist_func=None):
+    def __init__(self, use_cuda, gamma=1.0, normalize=False, bandwidth=None, dist_func=None, alignment_postprocess: str = 'row'):
         """
         Initializes a new instance using the supplied parameters
         :param use_cuda: Flag indicating whether the CUDA implementation should be used
@@ -291,6 +303,9 @@ class SoftDTW(torch.nn.Module):
         self.bandwidth = 0 if bandwidth is None else float(bandwidth)
         self.use_cuda = use_cuda
 
+        if alignment_postprocess not in ('row', 'none'):
+            raise ValueError("alignment_postprocess must be 'row' or 'none'")
+        self.alignment_postprocess = alignment_postprocess
         # Set the distance function
         if dist_func is not None:
             self.dist_func = dist_func
@@ -327,19 +342,68 @@ class SoftDTW(torch.nn.Module):
         x = x.unsqueeze(2).expand(-1, n, m, d)
         y = y.unsqueeze(1).expand(-1, n, m, d)
         return torch.pow(x - y, 2).sum(3)
-
-    def forward(self, X, Y):
+    
+    def forward_with_cost_matrix(self, C, return_alignment: bool = False):
         """
-        Compute the soft-DTW value between X and Y
-        :param X: One batch of examples, batch_size x seq_len x dims
-        :param Y: The other batch of examples, batch_size x seq_len x dims
-        :return: The computed results
+        Compute the soft-DTW value using a pre-computed cost matrix C.
+        Optionally also return the differentiable alignment matrix A = d sDTW / dC
+        which is row-normalized to sum to 1 over the teacher/time dimension.
+
+        :param C: Pre-computed cost matrix, shape (batch_size, seq_len_x, seq_len_y)
+        :param return_alignment: If True, also return alignment matrix A with the same shape as C
+        :return: If return_alignment is False: tensor of shape (batch_size,)
+                 If return_alignment is True: (values, A) where values has shape (batch_size,)
+                 and A has shape (batch_size, seq_len_x, seq_len_y)
+        """
+        assert C.dim() == 3, "Cost matrix C must be 3-dimensional (batch, N, M)"
+        
+        # The library's CUDA kernel has a thread limit. We need to check sequence lengths.
+        max_len = max(C.shape[1], C.shape[2])
+        use_cuda = self.use_cuda
+        if use_cuda and max_len > 1024:
+            print(f"SoftDTW: Cannot use CUDA because a sequence length ({max_len}) > 1024")
+            use_cuda = False
+
+        # Get the underlying apply function (_SoftDTWCUDA or _SoftDTW)
+        func_dtw = _SoftDTWCUDA.apply if use_cuda else _SoftDTW.apply
+
+        # Normalization is not supported with a pre-computed cost matrix
+        if self.normalize:
+            raise ValueError("Normalization is not supported when providing a pre-computed cost matrix.")
+
+        if not return_alignment:
+            return func_dtw(C, self.gamma, self.bandwidth)
+
+        C = C.clone().detach().requires_grad_(True)
+        sdtw_vals = func_dtw(C, self.gamma, self.bandwidth)
+        grad_outputs = torch.ones_like(sdtw_vals, device=sdtw_vals.device)
+        A = torch.autograd.grad(sdtw_vals, C, grad_outputs=grad_outputs, retain_graph=True)[0]
+
+        if self.alignment_postprocess == 'row':
+            eps = 1e-9
+            A = A.clamp_min(0.0)
+            A = A / (A.sum(dim=-1, keepdim=True) + eps)
+        return sdtw_vals, A
+
+    def forward(self, X, Y, return_alignment: bool = False):
+        """
+        Compute the soft-DTW value between X and Y.
+        Optionally also return the differentiable alignment matrix A = d sDTW / dC
+        (computed on the cross cost matrix C(X, Y)), row-normalized over Y's time axis.
+
+        :param X: One batch of examples, shape (batch_size, seq_len_x, dims)
+        :param Y: Other batch of examples, shape (batch_size, seq_len_y, dims)
+        :param return_alignment: If True, also return alignment matrix A with shape (batch_size, seq_len_x, seq_len_y)
+        :return: If return_alignment is False: tensor of shape (batch_size,)
+                 If return_alignment is True: (values, A)
         """
 
         # Check the inputs and get the correct implementation
         func_dtw = self._get_func_dtw(X, Y)
 
         if self.normalize:
+            if return_alignment:
+                raise NotImplementedError("Alignment return is not implemented for normalize=True.")
             # Stack everything up and run
             x = torch.cat([X, X, Y])
             y = torch.cat([Y, X, Y])
@@ -347,9 +411,22 @@ class SoftDTW(torch.nn.Module):
             out = func_dtw(D, self.gamma, self.bandwidth)
             out_xy, out_xx, out_yy = torch.split(out, X.shape[0])
             return out_xy - 1 / 2 * (out_xx + out_yy)
-        else:
+        
+        if not return_alignment:
             D_xy = self.dist_func(X, Y)
             return func_dtw(D_xy, self.gamma, self.bandwidth)
+
+        D_xy = self.dist_func(X, Y)
+        D_xy = D_xy.clone().detach().requires_grad_(True)
+        sdtw_vals = func_dtw(D_xy, self.gamma, self.bandwidth)
+        grad_outputs = torch.ones_like(sdtw_vals, device=sdtw_vals.device)
+        A = torch.autograd.grad(sdtw_vals, D_xy, grad_outputs=grad_outputs, retain_graph=True)[0]
+
+        if self.alignment_postprocess == 'row':
+            eps = 1e-9
+            A = A.clamp_min(0.0)
+            A = A / (A.sum(dim=-1, keepdim=True) + eps)
+        return sdtw_vals, A
 
 # ----------------------------------------------------------------------------------------------------------------------
 def timed_run(a, b, sdtw):
