@@ -415,7 +415,8 @@ class DualSpaceKDWithCMA(VariousDivergence):
     '''
 
     def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model, rank=0):
-        numba.cuda.select_device(rank)  # đảm bảo CUDA context cho mỗi process
+        torch.cuda.set_device(rank)
+        numba.cuda.select_device(torch.cuda.current_device())
 
         device = next(model.parameters()).device
         model = model.to(device)
