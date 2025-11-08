@@ -85,12 +85,7 @@ class _SoftDTWCUDA(Function):
 
         B, N, M = D.shape
 
-        # max threads per block
-        if D.is_cuda:
-            props = torch.cuda.get_device_properties(dev)
-            max_threads = props.max_threads
-        else:
-            max_threads = 1024
+        max_threads = 1024
         SAFE_THREAD_CAP = min(max_threads, 256)
         threads_per_block = min(max(N, M), SAFE_THREAD_CAP)
         threads_per_block = max(1, threads_per_block)
