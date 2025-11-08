@@ -81,7 +81,8 @@ class _SoftDTWCUDA(Function):
         R = torch.ones((B, N + 2, M + 2), device=D.device, dtype=torch.float32) * 1e10
         R[:, 0, 0] = 0.0
 
-        compute_softdtw_cuda[B, threads_per_block](D.float(), gamma_val, bandwidth_val, N, M, n_passes, R)
+        D_detached = D.detach().float()
+        compute_softdtw_cuda[B, threads_per_block](D_detached, gamma_val, bandwidth_val, N, M, n_passes, R)
         ctx.save_for_backward(D, R.clone(), torch.tensor(gamma_val, device=D.device), torch.tensor(bandwidth_val, device=D.device))
         return R[:, -2, -2].type(D.dtype)
 
