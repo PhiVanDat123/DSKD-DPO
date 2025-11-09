@@ -581,33 +581,33 @@ class DualSpaceKDWithCMA(VariousDivergence):
         return total_loss  # optionally divide by non_empty_pairs if you want mean
 
 
-    def _get_target_embeddings(self, distiller, input_data, output_data, pad_mask, teacher_pad_mask):
-        target = output_data["label"]
-        teacher_target = output_data[f"teacher_{distiller.teacher_model_type}_label"]
+    def _get_target_embeddings(self, distiller, batch, pad_mask, teacher_pad_mask, model, teacher_model):
+        target = batch["chosen_student_labels"]
+        teacher_target = batch[f"chosen_teacher_labels"]
         
-        if hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.embed_tokens
-        elif hasattr(distiller.student_model, "model") \
-            and hasattr(distiller.student_model.model, "model") \
-            and hasattr(distiller.student_model.model.model, "embed_tokens"):
-            stu_embed_tokens = distiller.student_model.model.model.embed_tokens
-        elif hasattr(distiller.student_model, "transformer") \
-            and hasattr(distiller.student_model.transformer, "wte"):
-            stu_embed_tokens = distiller.student_model.transformer.wte
+        if hasattr(model, "model") \
+            and hasattr(model.model, "embed_tokens"):
+            stu_embed_tokens = model.model.embed_tokens
+        elif hasattr(model, "model") \
+            and hasattr(model.model, "model") \
+            and hasattr(model.model.model, "embed_tokens"):
+            stu_embed_tokens = model.model.model.embed_tokens
+        elif hasattr(model, "transformer") \
+            and hasattr(model.transformer, "word_embeddings"):
+            stu_embed_tokens = model.transformer.word_embeddings
         else:
             raise NotImplementedError
 
-        if hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "model") \
-            and hasattr(distiller.teacher_model.model, "model") \
-            and hasattr(distiller.teacher_model.model.model, "embed_tokens"):
-            tea_embed_tokens = distiller.teacher_model.model.model.embed_tokens
-        elif hasattr(distiller.teacher_model, "transformer") \
-            and hasattr(distiller.teacher_model.model, "wte"):
-            tea_embed_tokens = distiller.teacher_model.transformer.wte
+        if hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.embed_tokens
+        elif hasattr(teacher_model, "model") \
+            and hasattr(teacher_model.model, "model") \
+            and hasattr(teacher_model.model.model, "embed_tokens"):
+            tea_embed_tokens = teacher_model.model.model.embed_tokens
+        elif hasattr(teacher_model, "transformer") \
+            and hasattr(teacher_model.model, "wte"):
+            tea_embed_tokens = teacher_model.transformer.wte
         else:
             raise NotImplementedError
 
