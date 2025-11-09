@@ -674,7 +674,7 @@ class BasicTrainer(object):
             loss, chosen_rewards, rejected_rewards = tisdpo_loss(chosen_logps_margin, rejected_logps_margin,
                                                                  chosen_position_kl, rejected_position_kl,
                                                                  beta=loss_config.beta, alpha=loss_config.alpha, token_level=loss_config.token_level)
-            loss_dtw = self.DSKD.compute_dtw_and_alignment_kd_losses(batch, self.distiller, self.policy, self.reference_model)
+            loss_dtw = self.DSKD.compute_dtw_loss(batch, self.distiller, self.policy, self.reference_model)
             losses = self.config.tisdpo_rate * loss + self.config.dtw_rate * loss_dtw
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
 

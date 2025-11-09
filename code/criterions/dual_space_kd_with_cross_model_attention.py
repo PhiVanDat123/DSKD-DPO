@@ -7,7 +7,31 @@ from datasets import load_dataset
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext, ExitStack
 from .soft_dtw_cuda import SoftDTW
-import numba.cuda
+
+import torch
+
+def _pairwise_cosine_distance(a, b, eps=1e-8):
+    """
+    Tính ma trận khoảng cách cosine: 1 - cosine_similarity(a, b)
+    a: (S, D)
+    b: (T, D)
+    Kết quả: (S, T)
+    """
+    # Chuẩn hóa vector theo chiều embedding
+    a_norm = a / (a.norm(dim=-1, keepdim=True) + eps)
+    b_norm = b / (b.norm(dim=-1, keepdim=True) + eps)
+    
+    # Tính cosine similarity giữa từng cặp (s, t)
+    cosine_sim = torch.cosine_similarity(
+        a_norm.unsqueeze(1),  # (S, 1, D)
+        b_norm.unsqueeze(0),  # (1, T, D)
+        dim=-1                # -> (S, T)
+    )
+    
+    # Chuyển sang khoảng cách: 1 - cosine
+    cosine_dist = 1.0 - cosine_sim
+    return cosine_dist
+
 
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
@@ -414,11 +438,9 @@ class DualSpaceKDWithCMA(VariousDivergence):
         return dtw_proj_total, align_kd_total
     '''
 
-    def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model, rank=0):
-        torch.cuda.set_device(rank)
-        numba.cuda.select_device(torch.cuda.current_device())
-
-        device = next(model.parameters()).device
+    def compute_dtw_loss(self, batch, distiller, model, reference_model):
+        # === Xác định device đang chạy ===
+        device = next(model.parameters()).device  
         model = model.to(device)
         teacher_model = reference_model.to(device)
         teacher_model.eval()
@@ -437,103 +459,126 @@ class DualSpaceKDWithCMA(VariousDivergence):
             output_hidden_states=True
         )
 
+        # === Labels & masks ===
         target = batch["chosen_student_labels"].to(device)
-        pad_mask = target.ne(self.padding_id)
         teacher_target = batch["chosen_teacher_labels"].to(device)
+
+        pad_mask = target.ne(self.padding_id)
         teacher_pad_mask = teacher_target.ne(self.padding_id)
 
-        hiddens = outputs.hidden_states[-1]
-        teacher_hiddens = teacher_outputs.hidden_states[-1]
+        # === Target embeddings (đảm bảo output cùng device) ===
+        stu_target_embeds, tea_target_embeds = self._get_target_embeddings(
+            distiller, batch, pad_mask, teacher_pad_mask, model, teacher_model
+        )
+        stu_target_embeds = stu_target_embeds.to(device)
+        tea_target_embeds = tea_target_embeds.to(device)
 
-        dtw_proj_total = torch.tensor(0.0, device=device, requires_grad=True)
-        align_kd_total = torch.tensor(0.0, device=device, requires_grad=True)
+        # === Hidden states ===
+        hiddens = outputs.hidden_states[-1].to(device)
+        teacher_hiddens = teacher_outputs.hidden_states[-1].to(device)
 
-        for i in range(hiddens.size(0)):
-            s_len = pad_mask[i].sum().item()
-            t_len = teacher_pad_mask[i].sum().item()
+        # === Đưa projectors về cùng device ===
+        for name in ["dtw_embed_t2s", "t2s"]:
+            if name in distiller.projectors:
+                distiller.projectors[name] = distiller.projectors[name].to(device)
+
+        # === Projected teacher embeddings & loss ===
+        projected_teacher_embeds = distiller.projectors["dtw_embed_t2s"](tea_target_embeds)
+        loss_embed = self._calculate_alignment_loss(stu_target_embeds, projected_teacher_embeds, pad_mask, teacher_pad_mask)
+
+        # === Projected teacher hidden & loss ===
+        projected_teacher_hiddens = distiller.projectors["t2s"](teacher_hiddens)
+        loss_hidden = self._calculate_alignment_loss(hiddens, projected_teacher_hiddens, pad_mask, teacher_pad_mask)
+
+        # === Tổng DTW loss ===
+        total_dtw_loss = loss_hidden + loss_embed
+
+        return 
+    
+    def _calculate_alignment_loss(self, student_embs, teacher_embs, student_mask, teacher_mask):
+        batch_size = student_embs.size(0)
+        device = student_embs.device
+        total_loss = torch.tensor(0.0, device=device)  # no requires_grad here
+        non_empty_pairs = 0
+
+        # detach teacher_embs if teacher shouldn't require grad
+        # (project teacher before calling this and detach earlier is better)
+        if teacher_embs.requires_grad:
+            teacher_embs = teacher_embs.detach()
+
+        for i in range(batch_size):
+            s_len = int(student_mask[i].sum().item())
+            t_len = int(teacher_mask[i].sum().item())
+
             if s_len == 0 or t_len == 0:
                 continue
 
-            s_seq = hiddens[i, :s_len, :]
-            t_seq = teacher_hiddens[i, :t_len, :]
+            non_empty_pairs += 1
 
-            # Project teacher hidden
-            proj = distiller.projectors["dtw_hidden_t2s"]
-            t_seq = t_seq.to(next(proj.parameters()).device)
-            t_proj = proj(t_seq)
+            s_seq = student_embs[i, :s_len, :].contiguous()
+            t_seq = teacher_embs[i, :t_len, :].contiguous()
 
-            # Compute cost matrix student space
-            C = 1.0 - torch.cosine_similarity(
-                s_seq.detach().unsqueeze(1).to(t_proj.device), t_proj.unsqueeze(0), dim=-1
-            )
-            C = C.to(device).float().contiguous()  # <<< FIX: float32, contiguous, device
+            c_stu_tea = _pairwise_cosine_distance(s_seq, t_seq)
+            c_stu_stu = _pairwise_cosine_distance(s_seq, s_seq)
+            c_tea_tea = _pairwise_cosine_distance(t_seq, t_seq)
 
-            # Soft-DTW student (batch dim = 1)
-            dtw_xy_stu, A = self.dtw.forward_with_cost_matrix(C.unsqueeze(0), return_alignment=True)
+            # apply band penalties if your code needs them (unchanged logic)
+            if self.dtw_band_source == 'cma' and hasattr(self, 'last_align') and self.last_align is not None and self.dtw_band_width > 0:
+                A = self.last_align[i][:s_len, :t_len]
+                eps = 1e-9
+                A_clamped = (A + eps) / (A.sum(dim=-1, keepdim=True) + eps)
+                row_entropy = -(A_clamped * torch.log(A_clamped + eps)).sum(dim=-1)  # (s_len)
+                lin_center = torch.arange(s_len, device=A.device, dtype=torch.float32) * (float(t_len) / float(s_len))
+                soft_center = (A_clamped * torch.arange(t_len, device=A.device).view(1, -1)).sum(dim=-1)
+                alpha = float(self.dtw_band_center_blend)
+                centers = alpha * soft_center + (1.0 - alpha) * lin_center
+                base_w = float(self.dtw_band_width)
+                width = base_w + float(self.dtw_band_entropy_coef) * row_entropy
+                j = torch.arange(t_len, device=A.device).view(1, -1).float()
+                dist = (j - centers.view(-1, 1)).abs()
+                band = dist <= width.view(-1, 1)
+                if self.dtw_band_warmup_steps and self.dtw_band_warmup_steps > 0:
+                    pen_scale = min(1.0, float(self._global_step + 1) / float(self.dtw_band_warmup_steps))
+                else:
+                    pen_scale = 1.0
+                penalty = float(self.dtw_band_penalty) * pen_scale
+                c_stu_tea = c_stu_tea + (~band).float() * penalty
 
-            # Self-cost matrices
-            C_ss = 1.0 - torch.cosine_similarity(
-                s_seq.detach().unsqueeze(1), s_seq.detach().unsqueeze(0), dim=-1
-            )
-            C_tt = 1.0 - torch.cosine_similarity(
-                t_proj.unsqueeze(1), t_proj.unsqueeze(0), dim=-1
-            )
-            dtw_ss_stu = self.dtw.forward_with_cost_matrix(C_ss.to(device).float().contiguous().unsqueeze(0))
-            dtw_tt_stu = self.dtw.forward_with_cost_matrix(C_tt.to(device).float().contiguous().unsqueeze(0))
-            dtw_div_stu = dtw_xy_stu - 0.5 * (dtw_ss_stu + dtw_tt_stu)
-            dtw_proj_total = dtw_proj_total + dtw_div_stu.squeeze()
+            if self.dtw_band_source == 'sdtw' and self.dtw_band_width > 0:
+                # compute alignment A from SoftDTW on smaller c_stu_tea (it fits)
+                _, A = self.dtw.forward_with_cost_matrix(c_stu_tea.unsqueeze(0), return_alignment=True)
+                A = A[0]
+                eps = 1e-9
+                A_clamped = (A + eps) / (A.sum(dim=-1, keepdim=True) + eps)
+                row_entropy = -(A_clamped * torch.log(A_clamped + eps)).sum(dim=-1)
+                lin_center = torch.arange(s_len, device=A.device, dtype=torch.float32) * (float(t_len) / float(s_len))
+                soft_center = (A_clamped * torch.arange(t_len, device=A.device).view(1, -1)).sum(dim=-1)
+                alpha = float(self.dtw_band_center_blend)
+                centers = alpha * soft_center + (1.0 - alpha) * lin_center
+                base_w = float(self.dtw_band_width)
+                width = base_w + float(self.dtw_band_entropy_coef) * row_entropy
+                j = torch.arange(t_len, device=A.device).view(1, -1).float()
+                dist = (j - centers.view(-1, 1)).abs()
+                band = dist <= width.view(-1, 1)
+                if self.dtw_band_warmup_steps and self.dtw_band_warmup_steps > 0:
+                    pen_scale = min(1.0, float(self._global_step + 1) / float(self.dtw_band_warmup_steps))
+                else:
+                    pen_scale = 1.0
+                penalty = float(self.dtw_band_penalty) * pen_scale
+                c_stu_tea = c_stu_tea + (~band).float() * penalty
 
-            # Alignment student -> teacher
-            A = A.detach()
-            t_aligned = torch.einsum("bnm,bmd->bnd", A, t_proj.unsqueeze(0).detach())
-            with torch.no_grad():
-                W_s = distiller.student_model.lm_head.weight
-                l_ts = t_aligned.matmul(W_s.transpose(-1, -2))
-            l_s = outputs.logits[i, :s_len, :].unsqueeze(0)
-            kd_i = self.compute_forward_kl_divergence(
-                l_s, l_ts, target[i, :s_len].unsqueeze(0), reduction="sum"
-            )
-            align_kd_total = align_kd_total + kd_i
+            # compute SoftDTW scores (s2t, s2s, t2t)
+            s2t = self.dtw.forward_with_cost_matrix(c_stu_tea.unsqueeze(0))
+            s2s = self.dtw.forward_with_cost_matrix(c_stu_stu.unsqueeze(0))
+            t2t = self.dtw.forward_with_cost_matrix(c_tea_tea.unsqueeze(0))
 
-            # Projection matrices for teacher space
-            proj_mod = distiller.projectors["dtw_hidden_t2s"]
-            W = proj_mod[0].weight
-            s_proj_det = torch.matmul(s_seq.detach(), W)
-            s_proj = torch.matmul(s_seq, W.detach())
+            pair_loss = s2t - 0.5 * (s2s + t2t)
+            total_loss = total_loss + pair_loss.view(1)
 
-            # Compute cost matrices teacher space
-            C_teach_xy = 1.0 - torch.cosine_similarity(
-                t_seq.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
-            )
-            C_teach_xy = C_teach_xy.to(device).float().contiguous()
+        if non_empty_pairs == 0:
+            return torch.tensor(0.0, device=device)
 
-            dtw_xy_teach, B = self.dtw.forward_with_cost_matrix(C_teach_xy.unsqueeze(0), return_alignment=True)
-
-            C_teach_xx = 1.0 - torch.cosine_similarity(
-                t_seq.unsqueeze(1), t_seq.unsqueeze(0), dim=-1
-            )
-            C_teach_yy = 1.0 - torch.cosine_similarity(
-                s_proj_det.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
-            )
-            dtw_xx_teach = self.dtw.forward_with_cost_matrix(C_teach_xx.to(device).float().contiguous().unsqueeze(0))
-            dtw_yy_teach = self.dtw.forward_with_cost_matrix(C_teach_yy.to(device).float().contiguous().unsqueeze(0))
-
-            dtw_div_teach = dtw_xy_teach - 0.5 * (dtw_xx_teach + dtw_yy_teach)
-            dtw_proj_total = dtw_proj_total + dtw_div_teach.squeeze()
-
-            # Alignment teacher -> student
-            B = B.detach()
-            s_aligned = torch.einsum("bnm,bmd->bnd", B, s_proj.unsqueeze(0))
-            W_t = distiller.teacher_model.lm_head.weight.detach()
-            l_st = s_aligned.matmul(W_t.transpose(-1, -2))
-            l_t = teacher_outputs.logits[i, :t_len, :].unsqueeze(0)
-            kd_t = self.compute_forward_kl_divergence(
-                l_st, l_t, teacher_target[i, :t_len].unsqueeze(0), reduction="sum"
-            )
-            align_kd_total = align_kd_total + kd_t
-
-        return dtw_proj_total, align_kd_total
-
+        return total_loss  # optionally divide by non_empty_pairs if you want mean
 
 
     def _get_target_embeddings(self, distiller, input_data, output_data, pad_mask, teacher_pad_mask):
