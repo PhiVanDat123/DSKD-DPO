@@ -322,121 +322,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         ).to(device)
         
         return t2s_logits, target
-    
-    '''
-    def compute_dtw_and_alignment_kd_losses(self, batch, distiller, model, reference_model):
-        device = next(model.parameters()).device  
-        model = model.to(device)
-        teacher_model = reference_model.to(device)
-        teacher_model.eval()
-
-        # === Forward student ===
-        outputs = model(
-            batch["chosen_student_input_ids"].to(device),
-            attention_mask=batch["chosen_student_attention_mask"].to(device),
-            output_hidden_states=True
-        )
-
-        # === Forward teacher ===
-        teacher_outputs = teacher_model(
-            batch["chosen_teacher_input_ids"].to(device),
-            attention_mask=batch["chosen_teacher_attention_mask"].to(device),
-            output_hidden_states=True
-        )
-
-        target = batch["chosen_student_labels"].to(device)
-        pad_mask = target.ne(self.padding_id)
-        teacher_target = batch["chosen_teacher_labels"].to(device)
-        teacher_pad_mask = teacher_target.ne(self.padding_id)
-
-        hiddens = outputs.hidden_states[-1]
-        teacher_hiddens = teacher_outputs.hidden_states[-1]
-
-        dtw_proj_total = torch.tensor(0.0, device=hiddens.device, requires_grad=True)
-        align_kd_total = torch.tensor(0.0, device=hiddens.device, requires_grad=True)
-
-        for i in range(hiddens.size(0)):
-            s_len = pad_mask[i].sum().item()
-            t_len = teacher_pad_mask[i].sum().item()
-            if s_len == 0 or t_len == 0:
-                continue
-
-            s_seq = hiddens[i, :s_len, :]   
-            t_seq = teacher_hiddens[i, :t_len, :]
-
-            #t_proj = distiller.projectors["dtw_hidden_t2s"](t_seq)  # (t_len, d_stu)
-            proj = distiller.projectors["dtw_hidden_t2s"]
-            t_seq = t_seq.to(next(proj.parameters()).device)  # chuyển t_seq sang cùng device với projector
-            t_proj = proj(t_seq)
-
-            C = 1.0 - torch.cosine_similarity(
-                s_seq.detach().unsqueeze(1).to(t_proj.device), t_proj.unsqueeze(0), dim=-1
-            )  # (s_len, t_len)
-
-            # soft-DTW divergence in student space: dtw(S,T') - 1/2(dtw(S,S) + dtw(T',T'))
-            dtw_xy_stu, A = self.dtw.forward_with_cost_matrix(C.unsqueeze(0), return_alignment=True)
-            C_ss = 1.0 - torch.cosine_similarity(
-                s_seq.detach().unsqueeze(1), s_seq.detach().unsqueeze(0), dim=-1
-            )  # (s_len, s_len)
-            C_tt = 1.0 - torch.cosine_similarity(
-                t_proj.unsqueeze(1), t_proj.unsqueeze(0), dim=-1
-            )  # (t_len, t_len)
-            dtw_ss_stu = self.dtw.forward_with_cost_matrix(C_ss.unsqueeze(0))
-            dtw_tt_stu = self.dtw.forward_with_cost_matrix(C_tt.unsqueeze(0))
-            dtw_div_stu = dtw_xy_stu - 0.5 * (dtw_ss_stu + dtw_tt_stu)
-            dtw_proj_total = dtw_proj_total + dtw_div_stu.squeeze()
-
-            A = A.detach()
-            t_aligned = torch.einsum("bnm,bmd->bnd", A, t_proj.unsqueeze(0).detach())  # (1, s_len, d_stu)
-
-            with torch.no_grad():
-                W_s = distiller.student_model.lm_head.weight  # (V_s, d_stu)
-                l_ts = t_aligned.matmul(W_s.transpose(-1, -2))  # (1, s_len, V_s)
-
-            l_s = outputs.logits[i, :s_len, :].unsqueeze(0)
-
-            kd_i = self.compute_forward_kl_divergence(
-                l_s, l_ts, target[i, :s_len].unsqueeze(0), reduction="sum"
-            )
-            align_kd_total = align_kd_total + kd_i
-
-            proj_mod = distiller.projectors["dtw_hidden_t2s"]
-            W = proj_mod[0].weight  # (d_stu, d_tea)
-            s_proj = torch.matmul(s_seq, W.detach())        # (s_len, d_tea)
-            s_proj_det = torch.matmul(s_seq.detach(), W)    # (s_len, d_tea)
-
-            # soft-DTW divergence in teacher space: dtw(T, S_proj) - 1/2(dtw(T,T) + dtw(S_proj,S_proj))
-            C_teach_xy = 1.0 - torch.cosine_similarity(
-                t_seq.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
-            )  # (t_len, s_len)
-            dtw_xy_teach, B = self.dtw.forward_with_cost_matrix(C_teach_xy.unsqueeze(0), return_alignment=True)
-            C_teach_xx = 1.0 - torch.cosine_similarity(
-                t_seq.unsqueeze(1), t_seq.unsqueeze(0), dim=-1
-            )  # (t_len, t_len)
-            C_teach_yy = 1.0 - torch.cosine_similarity(
-                s_proj_det.unsqueeze(1), s_proj_det.unsqueeze(0), dim=-1
-            )  # (s_len, s_len)
-            dtw_xx_teach = self.dtw.forward_with_cost_matrix(C_teach_xx.unsqueeze(0))
-            dtw_yy_teach = self.dtw.forward_with_cost_matrix(C_teach_yy.unsqueeze(0))
-            dtw_div_teach = dtw_xy_teach - 0.5 * (dtw_xx_teach + dtw_yy_teach)
-            dtw_proj_total = dtw_proj_total + dtw_div_teach.squeeze()
-
-            B = B.detach()
-            s_proj_b = s_proj.unsqueeze(0)
-            s_aligned = torch.einsum("bnm,bmd->bnd", B, s_proj_b)  # (1, t_len, d_tea)
-
-            W_t = distiller.teacher_model.lm_head.weight.detach()  # (V_t, d_tea)
-            l_st = s_aligned.matmul(W_t.transpose(-1, -2))  # (1, t_len, V_t)
-
-            l_t = teacher_outputs.logits[i, :t_len, :].unsqueeze(0)
-
-            kd_t = self.compute_forward_kl_divergence(
-                l_st, l_t, teacher_target[i, :t_len].unsqueeze(0), reduction="sum"
-            )
-            align_kd_total = align_kd_total + kd_t
-
-        return dtw_proj_total, align_kd_total
-    '''
+        
 
     def compute_dtw_loss(self, batch, distiller, model, reference_model):
         # === Xác định device đang chạy ===
@@ -468,7 +354,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
 
         # === Target embeddings (đảm bảo output cùng device) ===
         stu_target_embeds, tea_target_embeds = self._get_target_embeddings(
-            distiller, batch, pad_mask, teacher_pad_mask, model, teacher_model
+            batch, pad_mask, teacher_pad_mask, model, teacher_model
         )
         stu_target_embeds = stu_target_embeds.to(device)
         tea_target_embeds = tea_target_embeds.to(device)
@@ -581,7 +467,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         return total_loss  # optionally divide by non_empty_pairs if you want mean
 
 
-    def _get_target_embeddings(self, distiller, batch, pad_mask, teacher_pad_mask, model, teacher_model):
+    def _get_target_embeddings(self, batch, pad_mask, teacher_pad_mask, model, teacher_model):
         target = batch["chosen_student_labels"]
         teacher_target = batch[f"chosen_teacher_labels"]
         
