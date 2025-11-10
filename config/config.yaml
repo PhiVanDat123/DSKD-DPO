@@ -156,6 +156,18 @@ data_path: "tonyshelby/ultra-feedback_checking"
 
 tisdpo_rate: 1
 dtw_rate: 0.5
+dtw_gamma: 0.1
+dtw_gamma_start: 0.1 
+dtw_gamma_end: 0.8
+dtw_gamma_steps: 3570
+dtw_band_width: 5
+dtw_band_penalty: 1.0
+dtw_band_center_blend: 0.7
+dtw_band_entropy_coef: 2.0
+dtw_band_warmup_steps: 0
+kd_warmup_steps: 300
+dtw_warmup_steps: 0
+dtw_band_source: 'cma'
 scheduler: null
 
 

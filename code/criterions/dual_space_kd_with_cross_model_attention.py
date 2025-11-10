@@ -36,8 +36,22 @@ def _pairwise_cosine_distance(a, b, eps=1e-8):
 class DualSpaceKDWithCMA(VariousDivergence):
     def __init__(self, config, padding_id=-100) -> None:
         super().__init__(config, padding_id=padding_id)
+        self.dtw_rate = config.dtw_rate
+        if self.dtw_rate > 0:
+            self.dtw = SoftDTW(use_cuda=True, gamma=config.dtw_gamma)
+        self.dtw_gamma_start = config.dtw_gamma_start
+        self.dtw_gamma_end = config.dtw_gamma_end
+        self.dtw_gamma_steps = config.dtw_gamma_steps
+        self.dtw_band_width = config.dtw_band_width
+        self.dtw_band_penalty = config.dtw_band_penalty
+        self.dtw_band_center_blend = config.dtw_band_center_blend
+        self.dtw_band_entropy_coef = config.dtw_band_entropy_coef
+        self.dtw_band_warmup_steps = config.dtw_band_warmup_steps
+        self._global_step = 0
+        self.kd_warmup_steps = config.kd_warmup_steps
+        self.dtw_warmup_steps = config.dtw_warmup_steps
+        self.dtw_band_source = config.dtw_band_source
         self.distiller = None
-        self.dtw = SoftDTW(use_cuda=True)
 
     '''
     def forward(
