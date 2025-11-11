@@ -17,8 +17,7 @@ import sys
 import copy
 import torch.distributed as dist
 from huggingface_hub import login
-
-mp.set_start_method("fork", force=True)
+from numba import cuda
 
 os.environ["WANDB_SILENT"] = "true"
 
@@ -36,6 +35,9 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     print(f"[worker_main] config type: {type(config)}")
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
     
+    torch.cuda.set_device(rank)
+    cuda.select_device(rank)
+
     # === 🔧 Init torch.distributed for FSDP ===
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
@@ -149,6 +151,7 @@ def main(config: DictConfig):
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
         print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
+        mp.set_start_method("spawn", force=True)
         mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
 
     else:

@@ -393,7 +393,7 @@ class DualSpaceKDWithCMA(VariousDivergence):
         # === Tổng DTW loss ===
         total_dtw_loss = loss_hidden + loss_embed
 
-        return 
+        return total_dtw_loss
     
     def _calculate_alignment_loss(self, student_embs, teacher_embs, student_mask, teacher_mask):
         batch_size = student_embs.size(0)
