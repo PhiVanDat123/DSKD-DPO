@@ -675,7 +675,11 @@ class BasicTrainer(object):
                                                                  chosen_position_kl, rejected_position_kl,
                                                                  beta=loss_config.beta, alpha=loss_config.alpha, token_level=loss_config.token_level)
             loss_dtw = self.DSKD.compute_dtw_loss(batch, self.distiller, self.policy, self.reference_model)
-            losses = self.config.tisdpo_rate * loss + self.config.dtw_rate * loss_dtw
+
+            t2s_logits, target = self.DSKD.compute_dual_space_kd_loss_with_cma(batch, self.distiller, self.policy, self.reference_model)
+            projector_loss, _ = self.loss.compute_cross_entropy_loss(t2s_logits, target)
+
+            losses = self.config.projector_rate * projector_loss + self.config.tisdpo_rate * loss + self.config.dtw_rate * loss_dtw
             reward_accuracies = (chosen_rewards > rejected_rewards).float()
 
             chosen_rewards = all_gather_if_needed(chosen_rewards, self.rank, self.world_size)
@@ -934,6 +938,7 @@ class BasicTrainer(object):
             #### END EVALUATION ####
             
             ### === Phase 1: Train Projector ===
+            '''
             if config.loss.name in {'tisdpo'}:
                 for param in self.policy.parameters():
                     param.requires_grad = False
@@ -959,10 +964,11 @@ class BasicTrainer(object):
 
                 self.projector_optimizer.step()
                 self.projector_scheduler.step()
-            
+            '''
             ### === Phase 2: Train Student Model ===
-            for param in self.distiller.projectors.parameters():
-                param.requires_grad = False
+            #for param in self.distiller.projectors.parameters():
+                #param.requires_grad = False
+            self.distiller.projectors.train()
             self.policy.train()
             start_time = time.time()
             batch_metrics = defaultdict(list)
